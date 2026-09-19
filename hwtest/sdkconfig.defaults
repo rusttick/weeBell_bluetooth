@@ -1,0 +1,23 @@
+# ESP32 Audio Kit V2.2: ESP32-D0WD-V3 rev 3, 4 MB flash (Zbit 0x5e/0x4016).
+CONFIG_IDF_TARGET="esp32"
+
+# Flash: 4 MB, ESP-IDF default DIO at 40 MHz. The flash baud is not a config option under idf.py: use -b 921600.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+
+# Console on UART0 at 115200 (through the CP2102).
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_NUM=0
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+CONFIG_ESPTOOLPY_MONITOR_BAUD_115200B=y
+
+# The main firmware requires chip revision 3 or later; this board is revision 3.
+CONFIG_ESP32_REV_MIN_3=y
+
+# PSRAM (stage 3): 64 Mbit chip, auto-detected. Keep booting if it is not found, so the failure is
+# reported by the app instead of aborting in the bootloader.
+CONFIG_ESP32_SPIRAM_SUPPORT=y
+CONFIG_SPIRAM_TYPE_AUTO=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y

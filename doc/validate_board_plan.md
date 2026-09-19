@@ -48,6 +48,8 @@ table template is at the end).
 
 **Goal:** a known starting point, so later results mean something.
 
+**DIP:** all OFF.
+
 1. **Photograph** the board top and bottom, the shield can, and the DIP switches. Note everything printed,
    including "a618" and "k547".
 2. **Set the DIP switches all OFF.** Leave the SD slot **empty** and the **battery disconnected**. Connect
@@ -66,6 +68,8 @@ table template is at the end).
 ## Stage 1 — Verify the flashing method
 
 **Goal:** prove USB serial and the bootloader connection work, with no code of ours involved.
+
+**DIP:** all OFF.
 
 1. **Find the port.** Run `ls /dev/tty.*` with the board unplugged, then plugged in. A new
    `/dev/tty.usbserial-*` (or `/dev/cu.SLAB_USBtoUART`) appears. Also check `system_profiler SPUSBDataType`
@@ -99,6 +103,8 @@ check the 3.3 V rail.
 ## Stage 2 — Hello world, once per second
 
 **Goal:** our own code builds, flashes and runs, and we can see its output.
+
+**DIP:** all OFF.
 
 1. **Create a minimal project** (`hwtest/`): `app_main` prints a message with a counter and the uptime once
    per second.
@@ -135,9 +141,13 @@ bootloader failing to find the partition table.
 
 **Goal:** know exactly which board variant we have, and confirm PSRAM.
 
+**DIP:** all OFF.
+
 1. **Log the chip and flash info** from the boot log and the firmware (`esp_chip_info`, flash size).
-2. **Enable PSRAM** (64 Mbit, auto-detect) and print `heap_caps_get_total_size(MALLOC_CAP_SPIRAM)`.
-   Expect about **8 MB**. **Fail** if PSRAM init errors: check the mode setting and note the message.
+2. **Enable PSRAM** (64 Mbit, auto-detect) and print the chip size (`esp_spiram_get_size()`) and
+   `heap_caps_get_total_size(MALLOC_CAP_SPIRAM)`. Expect a chip size of **8 MB** but a heap of about
+   **4 MB**: the ESP32 maps only 4 MB of external RAM, and the rest needs himem (bank switching). 4 MB is
+   ample for this project. **Fail** if PSRAM init errors: check the mode setting and note the message.
 3. **Scan I2C on both candidate pin pairs** (leave everything else idle). Do **not** drive GPIO0.
    - Pair A: **SDA 18 / SCL 23**
    - Pair B: **SDA 33 / SCL 32**
@@ -147,7 +157,7 @@ bootloader failing to find the partition table.
    **0x1A**.
 4. **Record** the results in the log, and update `audio_kit_v2.2.md` (sections 4 and 9).
 
-**Pass:** PSRAM is about 8 MB, and one I2C pair shows a device at 0x10 (or 0x1A).
+**Pass:** PSRAM chip is 8 MB with about 4 MB in the heap and a clean read-back test, and one I2C pair shows a device at 0x10 (or 0x1A).
 **Decision it feeds:** newest vs. older module; whether GPIO 5, 18 and 23 are free.
 
 ---
@@ -155,6 +165,8 @@ bootloader failing to find the partition table.
 ## Stage 4 — GPIOs and switches
 
 **Goal:** find out which GPIOs we can actually use, given the board's wiring and the SD card requirement.
+
+**DIP:** SW4 ON (IO13 to P1), rest OFF; flip others only for the continuity checks.
 
 **The SD card changes the GPIO plan** (recorded in `initial_design.md`). In 1-bit mode the SD slot needs
 **IO14 (CLK), IO15 (CMD) and IO2 (DATA0)**; 4-bit mode also needs IO4, IO12 and IO13. The proposal in
@@ -186,7 +198,9 @@ bootloader failing to find the partition table.
    | **IO12** | P1 pin 3 | strapping pin; only after reading the eFuse result in stage 1 |
    | IO18, 23, 5 | free only on an **older** module (on the newest they are the codec's) and after removing R68–R70 | depends on stage 3 |
 
-   That gives **four** clean GPIOs on any module and a fifth only via IO12 or an older module. If five are
+   That gives **four** clean GPIOs on any module and a fifth only via IO12 or an older module.
+   **Stage 3 found the older module,** so IO18 and IO23 (and IO5) are available too, after removing
+   R69, R68 (and R70). The fifth signal is solved that way. If five are
    not available, the options are: (a) drop the dial-in-progress input and rely on hook plus pulse only
    (the current firmware's digit timing already works this way); (b) add a small I2C GPIO expander on the
    codec's I2C bus (only possible on the newest module, where that bus is on the exposed IO18/IO23 pins);
@@ -200,6 +214,8 @@ works with the SD card, and the boot-state check is clean.
 ## Stage 5 — Codec control
 
 **Goal:** talk to the ES8388 over I2C, with no audio yet.
+
+**DIP:** all OFF.
 
 1. **Initialize I2C** on the pair found in stage 3 at 100 kHz, address 0x10.
 2. **Read and write registers** using this repo's `es8388.c` driver, or a minimal version: write a register,
@@ -217,6 +233,8 @@ driven by something else.
 ## Stage 6 — Audio output (earpiece path)
 
 **Goal:** a clean tone out of the headphone jack, and volume steps that behave.
+
+**DIP:** all OFF.
 
 1. **Start I2S** (BCLK/WS/data pins from stage 3; **MCLK on GPIO0**) and play a 1 kHz sine at 8 kHz sample
    rate. Plug headphones into the **headphone** jack. Expect a clean tone in both channels.
@@ -238,6 +256,8 @@ driven by something else.
 ## Stage 7 — Audio input (microphone path)
 
 **Goal:** a clean signal from the line-in jack, isolated from the onboard mics.
+
+**DIP:** all OFF.
 
 1. **Line-in test first:** feed a tone from a phone into the **line-in** jack with `adc_input = LINE2`.
    Capture with I2S, and either loop it back to the headphones or compute its level. Expect a clean copy of
@@ -261,6 +281,8 @@ driven by something else.
 ## Stage 8 — SD card for voice prompts
 
 **Goal:** store many higher-resolution recordings on the SD card and play them reliably.
+
+**DIP:** SW3 ON (IO15 to SD CMD), rest OFF (SW2 OFF keeps DATA3 pulled up).
 
 **Rules for this stage:**
 - **Never let the code format the card.** The existing SD code in this repo
@@ -300,6 +322,8 @@ files fine.
 
 **Goal:** pair with a real phone, place and receive a call, and pass voice audio both ways.
 
+**DIP:** SW3 ON, rest OFF (SD needed for the step 7 coexistence test).
+
 1. **Bring up Classic Bluetooth** with the HFP client (as `bt_task.c` does) and confirm the device is
    discoverable and connectable. Use the ELEGOO board first if it is quicker; the code path is the same.
 2. **Pairing:** test both the current numeric-comparison method and the planned **passkey entry**
@@ -323,6 +347,8 @@ files fine.
 
 **Goal:** reliable digit and hook detection from the actual contacts.
 
+**DIP:** SW3 + SW4 ON, rest OFF (final config; hook on IO13 if stage 4 confirms).
+
 1. **Wire the contacts** to the chosen GPIOs with pull-ups (stage 4), the 10–100 Ω series resistors and, if
    the wiring is long, small filter capacitors.
 2. **Log raw edges** with microsecond timestamps while dialing each digit 1–9 and 0. Measure the pulse rate
@@ -340,6 +366,8 @@ files fine.
 ## Stage 11 — Ring driver
 
 **Goal:** ring the bell safely and find its real resonance and voltage needs.
+
+**DIP:** SW3 + SW4 ON, rest OFF.
 
 **Safety:** this stage involves a boost converter output of up to 45 V DC. Use a current-limited bench
 supply if you have one, insulate connections, and never touch the output while it is running.
@@ -370,6 +398,8 @@ supply if you have one, insulate connections, and never touch the output while i
 
 **Goal:** understand power behavior on USB and on battery.
 
+**DIP:** SW3 + SW4 ON, rest OFF.
+
 1. **Battery connector:** identify the connector type and the **polarity** with the meter before plugging in
    a LiPo. Use a protected LiPo.
 2. **Current draw** in idle, Bluetooth connected, audio playing, in a call, and ringing. Record each.
@@ -390,6 +420,8 @@ supply if you have one, insulate connections, and never touch the output while i
 
 **Goal:** everything together, for hours.
 
+**DIP:** SW3 + SW4 ON, rest OFF.
+
 1. **Run the combined scenario** on the real hardware: Bluetooth call with voice, SD prompt playback,
    dialing, and ringing on incoming calls, repeated in a loop.
 2. **Soak 24 hours** on USB power and again on battery, logging resets, reset reasons, heap, stack high-water
@@ -409,7 +441,7 @@ Validation is finished when every row below is **confirmed working** on the real
 | USB serial and flashing (method documented) | 1 | |
 | Our own code runs; console output visible | 2 | |
 | Module variant and I2C pins identified | 3 | |
-| PSRAM (about 8 MB) | 3 | |
+| PSRAM (8 MB chip, about 4 MB in the heap) | 3 | |
 | GPIO plan proven, boot-safe, works with SD | 4 | |
 | Codec control over I2C | 5 | |
 | Earpiece audio out, chosen sample rates, even volume steps | 6 | |

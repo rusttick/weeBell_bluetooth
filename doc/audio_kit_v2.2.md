@@ -28,6 +28,10 @@ Section 9 lists what to confirm on your specific board.
   SCL, I2S BCLK), which are also three of the header pins and three of the button GPIOs. **[M]** Older
   ES8388 modules used 33/32/27 instead. **[P]** If your board has the newer module, those three header pins
   are not free. An I2C scan settles it (section 9).
+- **Confirmed on this board (V2.2 A618 / k547), 2026-09-19: it has the OLDER ES8388 module.** An I2C scan
+  found the ES8388 at **0x10 on SDA 33 / SCL 32** and nothing on 18/23. So the codec's BCLK is expected on
+  **IO27** (to be confirmed in stage 6), and **IO18, IO23 and IO5 are free** on the P2 header (after removing
+  R68–R70 from the key ladder). This resolves the GPIO shortage caused by the SD card (section 6).
 - **Microphone and line-in inputs share one codec input, and the reason is now confirmed** from the
   official module pin table and board schematic (section 5). The line-in jack is **LIN2/RIN2**, so the
   firmware must select `LINE2` (it selects `LINE1` today).
@@ -147,7 +151,7 @@ mixed (section 5). **[K]/[M]/[I]**
 | I2S data out (to codec) | 26 | 26 | **25** |
 | I2S data in (from codec) | 35 | 35 | 35 |
 | Codec I2C address | 0x10 | 0x10 | 0x1A |
-| Source | **[M]** (matches the library's "variant 7") | **[P]** library "variant 5" | **[P]** |
+| Source | **[M]** (matches the library's "variant 7") | **[P]** library "variant 5". **Confirmed on this board (I2C scan, 2026-09-19); BCLK/WS/data pins still to confirm in stage 6.** | **[P]** |
 
 Other board wiring (all versions): headphone-jack detect on **39**, speaker-amp enable on **21**, aux-in
 detect on **12**, SD card CS/MISO/MOSI/CLK on 13/2/15/14, card-detect on 34. **[P]/[K]**
@@ -232,7 +236,7 @@ The SD pins (IO2, 4, 12, 13, 14, 15) are otherwise only on the SD slot.
 | **IO14** | SD CLK (through R26), JTAG MTMS | **Yes** via P1 pin 4 |
 | **IO12** | SD DATA2 (pulled up), JTAG MTDI; strapping pin | **Avoid** |
 | **IO21** | speaker-amp CTRL | **No** |
-| **IO23, IO18, IO5** | keys KEY4/5/6 **and, on the newest module, the codec's I2C SCL, SDA and BCLK** | **No** (on the newest module); on the older module only after removing R68–R70 |
+| **IO23, IO18, IO5** | keys KEY4/5/6 **and, on the newest module only, the codec's I2C SCL, SDA and BCLK** | **Yes on this board** (older module, confirmed): only after removing R68 (IO23), R69 (IO18), R70 (IO5). IO5 is a strapping pin, so prefer IO18 and IO23 |
 | IO36, 39, 34 | key ladder, headphone detect, SD detect | input-only; not on a header |
 | IO25, 26, 27, 32, 33, 35 | codec I2S/I2C (internal) | No |
 | IO0, IO1, IO3 | boot/MCLK, UART | No |
@@ -314,6 +318,7 @@ fitted. **[K]** For our pin plan, set **SW4 and SW5 ON and the other three OFF**
 1. **I2C scan** (do this first). Scan **SDA 18 / SCL 23**, then **SDA 33 / SCL 32**. Expect **0x10**
    (ES8388). The pair that answers tells you the module version (newest = 18/23). No answer on either
    means AC101 (try 0x1A on 33/32) or a wiring problem.
+   **Done 2026-09-19:** device at 0x10 on SDA 33 / SCL 32, nothing on 18/23. Older ES8388 module.
 2. **Photograph the top of the shield can** and note any printed code. **k547** may be a date or lot code;
    nothing documents it.
 3. **Confirm the mic couplers:** C17 and C19 absent, C18 and C20 present; and whether the onboard mics are
