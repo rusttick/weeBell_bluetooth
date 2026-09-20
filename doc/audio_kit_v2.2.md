@@ -192,8 +192,9 @@ detect on **12**, SD card CS/MISO/MOSI/CLK on 13/2/15/14, card-detect on 34. **[
   1. Our microphone goes into the **line-in jack** (LIN2/RIN2). The firmware selects
      `AUDIO_HAL_ADC_INPUT_LINE1` today; it must become **`AUDIO_HAL_ADC_INPUT_LINE2`**. This repo's
      `es8388.c` supports that choice (`ADC_INPUT_LINPUT2_RINPUT2`). **[P]**
-  2. The **onboard mics share that input**, so they would mix into the handset mic. Remove **C18 and C20**
-     (or the mics themselves) to isolate the line-in path. **[I]**
+  2. The **onboard mics share that input**, so they would mix into the handset mic. Remove the mics themselves to
+     isolate the line-in path (C18 and C20 are too small to handle by hand; remove them only as a fallback, stage 7
+     test 2). **[I]**
   3. **Mic bias:** MBIAS and HBIAS are 3.3 V through 1 kΩ, for the onboard electret mics. Our MAX9814 needs
      its own supply (the 3.3 V header pin works). **[M]/[I]**
   4. Line-in volume quirk: the library notes the aux volume is fixed at line level unless a "volume hack"
