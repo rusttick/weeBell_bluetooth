@@ -491,9 +491,9 @@ working values.
 ### Test 4. MAX9814 gain: 40, 50 and 60 dB
 
 **Setup:** the MAX9814 module built as in `initial_design.md` "Microphone" (supply filter, R2, jumper headers), wired to
-the line-in tip and sleeve. The GAIN header picks the gain: **shunt to VDD = 40 dB, to GND = 50 dB, no shunt = 60 dB**.
+the line-in tip and sleeve. The GAIN strap picks the gain: **to VDD = 40 dB, to GND = 50 dB, removed = 60 dB**.
 Keep the module at the distance it will have from the mouth.
-For each setting, **power the module off and on** after moving the shunt, then:
+For each setting, **power the module off and on** after moving the strap, then:
 **Type:** `audio on 8000`, then `mic snr 40dB` (or `50dB`, `60dB`). Follow the prompts; in the speech phase count
 "one two three ..." at a normal level.
 
@@ -511,7 +511,7 @@ For each setting, **power the module off and on** after moving the shunt, then:
 - **Silence after** much higher than **silence before** means the AGC is boosting room noise in the pauses.
 - **Choose** the setting with the best signal-to-noise that meets the peak and clipping limits. If two are close,
   take the lower gain.
-- Then try the attack/release header (A/R: no shunt = 1:4000, **shunt to VDD = 1:2000, to GND = 1:500**) at the chosen gain, for example
+- Then try the attack/release pin (A/R: open = 1:4000, **linked to VDD = 1:2000, to GND = 1:500**) at the chosen gain, for example
   `mic snr 40dB-AR2000`, and keep the setting with the smaller rise after speech.
 
 ### Test 5. Power source (ground-loop hum)
@@ -533,16 +533,16 @@ Repeat `mic avg 30` and `mic snr ringing` while the bell is being driven, to che
 ### Wiring and noise notes (hardware only)
 
 - **The build is specified in `initial_design.md`, section "Microphone"** (parts, jumper headers, cord wire table,
-  wiring diagram, checks). Tests 1 to 3 need no MAX9814. Build the module (R1, R2, C1, C2 and the two jumper headers,
-  GAIN shunt on 1–2 = 40 dB, A/R open) before test 4, run its unpowered and powered checks, and for tests 4 and 5 connect
-  it to the 3V3 header pin, a GND header pin and the line-in plug (tip, sleeve) with short wires. Test 6 then uses the
-  8-wire cord.
-- **Clean supply at the module:** the 3.3 V header comes from a switching regulator. R1 (22 Ω) with C1 (47 to 100 µF)
-  gives a corner of about 70 to 150 Hz, and C2 (100 nF) sits across the pins.
-- **Keep supply current out of the signal return.** The 8 straight wires are: 1 VCC, 2 power GND, 3 mic OUT, 4 and 5
-  signal GND (the jack sleeve), 6 earpiece +, 7 earpiece −, 8 power GND. Join the two grounds only at the module's single
-  GND pin. Twisting is not needed: the mic OUT is a low-impedance output (with R2, 220 Ω, in series) and the earpiece
-  pair carries only millivolts (the 820 Ω pad is at the amplifier end).
+  wiring diagram, checks). Tests 1 to 3 need no MAX9814. Build the module (`r1`, `r2`, `c1`, `c2`, GAIN strap to
+  `max_vdd` = 40 dB, A/R open) before test 4, run its unpowered and powered checks, and for tests 4 and 5 connect it to
+  the 3V3 header pin, a GND header pin and the line-in plug (tip, sleeve) with short wires. Test 6 then uses the 8-wire
+  cord.
+- **Clean supply at the module:** the 3.3 V header comes from a switching regulator. `r1` (22 Ω) with `c1` (47 to
+  100 µF) gives a corner of about 70 to 150 Hz, and `c2` (100 nF) sits across the pins.
+- **Keep supply current out of the signal return.** The cord's 8 straight wires are used as: 1 supply, 1 mic signal, 2 in
+  parallel for the power ground, 2 in parallel for the signal ground (the jack sleeve) and 2 for the earpiece. Join the
+  two grounds only at the module's GND pin. Twisting is not needed: the mic OUT is a low-impedance output (with `r2`,
+  220 Ω, in series) and the earpiece pair carries only millivolts (the 820 Ω pad is at the amplifier end).
 - **Why the gain is measured:** more gain does not improve the MAX9814's own signal-to-noise (its input noise is amplified
   with the speech); it only helps against noise added afterwards. The handset mic is close to the mouth, and (from
   memory of the datasheet) the AGC can lower the gain only about 20 dB, so 60 dB can clip a loud close voice and boosts

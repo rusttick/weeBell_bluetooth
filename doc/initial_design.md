@@ -134,56 +134,60 @@ no carbon-mic-style DC bias or current-loop circuitry is needed.
   long (6–8 ft) coiled cord, which is far more noise-resistant than running a raw high-impedance capsule signal that
   distance.
 - **Line-in, not mic-in**, and **left channel only** (the plug tip). Codec setup is in "Firmware changes".
-- **GAIN and A/R are strapped at the module** with jumper shunts, so they never travel down the cord. First build:
-  **GAIN = 40 dB, A/R open (1:4000)**. Stage 7 (test 4) chooses the final settings.
+- **GAIN is strapped at the module**, so it never travels down the cord. First build: **GAIN = 40 dB, A/R open
+  (1:4000)**. Stage 7 (test 4) chooses the final settings.
 - **No software filtering** on the microphone path. **No hardware high-pass** unless hum or rumble turns out to be a
-  problem (a wire link is left in the output for it).
+  problem (R2 is placed so a film capacitor can be added in series with it).
 - **The onboard microphones are removed** from the Audio Kit (see "The codec side").
+- **Built without a PCB:** the component leads and cord wires are twisted together at each MAX9814 pin and soldered.
 
 ### Handset cord
 
 **Decided (2026-09-20): an 8-conductor cord has been ordered.** The earlier plan (a coiled 3-conductor TRS headphone
 extension) no longer works: the earpiece is on the bridged speaker outputs (two wires, neither may be ground) and the
-MAX9814 needs supply, ground and signal, which together need more than three conductors. The cord is **8 straight wires**
-(they cannot be twisted or routed). Check the cord's actual layout with a meter before soldering, and write down which
-colour is which wire number.
+MAX9814 needs supply, ground and signal. The cord is **8 straight wires** in a round bundle, so every wire is
+equivalent to every other and it does not matter which is which. Use them as:
 
-| Wire | Signal | Base end | Handset end |
-|---|---|---|---|
-| 1 | mic supply, 3.3 V | a **3V3** header pin | R1, then the module's **VDD** pin |
-| 2 | power ground (supply return) | a header **GND** pin | the module's **GND** pin |
-| 3 | mic signal | line-in plug **tip** (LINEINL) | R2, then the module's **OUT** pin |
-| 4 | signal ground | line-in plug **sleeve** | the module's **GND** pin |
-| 5 | signal ground (in parallel with 4) | line-in plug **sleeve** | the module's **GND** pin |
-| 6 | earpiece + | 820 Ω pad, then J3 **+** (or J4) | earpiece |
-| 7 | earpiece − | 820 Ω pad, then J3 **−** (or J4) | earpiece |
-| 8 | power ground (in parallel with 2) | a header **GND** pin | the module's **GND** pin |
+- 1 wire for the mic supply (3.3 V).
+- 1 wire for the mic signal.
+- 2 wires in parallel for the power ground (the supply return).
+- 2 wires in parallel for the signal ground.
+- 2 wires for the earpiece (through the 820 Ω pad at the amplifier end; not part of the microphone diagram).
 
-- **Supply current returns on wires 2 and 8, the signal returns on 4 and 5.** The two grounds are joined **only at
-  the module's GND pin**, so supply current never flows in the signal return. (At the base both reach the same board
-  ground; the point is to keep the drop along the cord out of the signal.)
-- The 820 Ω earpiece pad stays at the amplifier end, so the cord carries only the small, attenuated earpiece signal
-  (millivolts). That is also why twisting is not needed. Keep the microphone module away from the earpiece
-  (acoustic feedback).
+Supply current returns on the power ground and the signal returns on the signal ground. The two grounds are joined
+**only at the MAX9814's GND pin**, so supply current never flows in the signal return. Keep the microphone module away
+from the earpiece (acoustic feedback).
 
-### Parts at the module
+### Terminals and components
 
-Fit these at the MAX9814's own pins, inside the handset, not at the far end of the cord. They do not duplicate the
-module's parts (below): C2 (before the module's ferrite bead) and the module's own 2.2 µF form a
-capacitor-inductor-capacitor filter, R1 and C1 add low-frequency filtering (the 3.3 V header comes from a switching
-regulator), and R2 has no equivalent on the module.
+The diagram below shows what connects to what. A **node** is a place where leads meet, and each **line** is one wire or
+one component lead. At a node, twist all the leads on its lines together and solder them there.
 
-| Part | Value | Where |
-|---|---|---|
-| R1 | **22 Ω**, 0.25 W | in series with the supply: wire 1 to the module's VDD pin (drops about 66 mV at 3 mA) |
-| C1 | **47 to 100 µF**, 10 V electrolytic (a 3300 µF 6.3 V also works electrically) | VDD (+) to GND (−). With R1 the corner is about 150 Hz (47 µF) to 70 Hz (100 µF) |
-| C2 | **100 nF** ceramic (X7R) | VDD to GND, as close to the pins as possible |
-| R2 | **220 Ω** (**Decided**) | in series with OUT: isolates the cord's capacitance from the amplifier output and adds RF and static protection; costs about 0.2 dB into the codec's roughly 10 kΩ input |
-| Link | a short wire link, next to R2 | in series with OUT; leave room to cut it and fit a film capacitor if a hardware high-pass is ever wanted |
-| GAIN header | 3-pin 0.1" header and a jumper shunt (or wire links) | pin 1 = VDD, pin 2 = the module's GAIN pin, pin 3 = GND. Shunt 1–2 = **40 dB**, 2–3 = **50 dB**, no shunt = **60 dB** |
-| A/R header | 3-pin 0.1" header and a jumper shunt (or wire links) | pin 1 = VDD, pin 2 = the module's A/R pin, pin 3 = GND. Shunt 1–2 = **1:2000**, 2–3 = **1:500**, no shunt = **1:4000** |
+**Audio Kit terminals (the base end of the cord):**
 
-The headers let stage 7 change settings without rewiring. Power the module off and on after moving a shunt.
+- `kit_3v3`: a 3V3 header pin (P3 or P4).
+- `kit_gnd`: a GND header pin.
+- `kit_tip`: the tip of a 3.5 mm plug for the line-in jack J1 (LINEINL, which reaches codec LIN2).
+- `kit_sleeve`: the sleeve of that plug.
+
+**MAX9814 module pins** (A/R is left open):
+
+- `max_vdd`, `max_gnd`, `max_gain`, `max_out`.
+
+**Components**, fitted at the module's own pins inside the handset, not at the far end of the cord. They do not
+duplicate the module's own parts (below): `c2` (before the module's ferrite bead) and the module's 2.2 µF form a
+capacitor-inductor-capacitor filter, `r1` and `c1` add low-frequency filtering (the 3.3 V header comes from a switching
+regulator), and `r2` has no equivalent on the module.
+
+- `r1`: **22 Ω**, 0.25 W. Drops about 66 mV at 3 mA. Together with `c1`, the corner is about 150 Hz (47 µF) to 70 Hz (100 µF).
+- `r2`: **220 Ω**. Isolates the cord's capacitance from the amplifier output and adds RF and static protection; costs
+  about 0.2 dB into the codec's roughly 10 kΩ input.
+- `c1`: **47 to 100 µF**, 10 V electrolytic (a 3300 µF 6.3 V also works electrically). **Plus leg on `max_vdd`.**
+- `c2`: **100 nF** ceramic (X7R), with short leads.
+- **GAIN strap** (the `max_gain` to `max_vdd` line): a removable link, not a component. To `max_vdd` = **40 dB**, to
+  `max_gnd` = **50 dB**, removed = **60 dB**. Power the module off and on after moving it.
+- **A/R** (not drawn): left open = 1:4000. To test other settings in stage 7, link `max_ar` to `max_vdd` (1:2000) or to
+  `max_gnd` (1:500).
 
 ### What is already on the module
 
@@ -201,81 +205,49 @@ about 2 µF; the GAIN and A/R pins read open to both VDD and GND.
 
 ### Wiring
 
-Build sheet for the module (wire by pin name):
-
-| Module pin | Connect to |
-|---|---|
-| GND | wires **2, 4, 5 and 8**; the minus leg of C1; one leg of C2; pin 3 of both jumper headers |
-| VDD | **R1** (other end to wire **1**); the plus leg of C1; the other leg of C2; pin 1 of both jumper headers |
-| GAIN | pin 2 of the GAIN header |
-| OUT | **R2** and the link in series, other end to wire **3** |
-| A/R | pin 2 of the A/R header |
-
-Keep every lead short. If the GND and VDD header pins are adjacent, C1 and C2 can straddle them directly on the pins
-(C1's plus leg on VDD).
-
-**Microphone wiring diagram.** Each line is a wire or a component lead; the wire numbers are the cord's. The thick line
-is the jumper shunt on the GAIN header (pins 1–2 = GAIN tied to VDD = 40 dB, as first built). The A/R header is wired the
-same way with no shunt fitted (1:4000). The earpiece wires 6 and 7 are not part of the microphone and are not drawn.
+Terminals and components are described above. The lines that reach a `kit_*` node are cord wires; the two labelled
+"2 wires" are two cord wires in parallel. The `c1` line marked "+" is its plus leg. Keep every lead short.
 
 ```mermaid
 flowchart LR
-  subgraph base["Audio Kit (base)"]
-    kit_3v3["3V3 header pin"]
-    kit_gnd["GND header pin"]
-    kit_tip["line-in plug tip (LINEINL)"]
-    kit_sleeve["line-in plug sleeve"]
-  end
+  max_vdd["max_vdd"]
+  max_gnd["max_gnd"]
+  max_gain["max_gain"]
+  max_out["max_out"]
 
-  subgraph handset["Handset: MAX9814 module and parts"]
-    r1["R1 22 Ω"]
-    r2["R2 220 Ω + link"]
-    c1["C1 47-100 µF"]
-    c2["C2 100 nF"]
+  r1["r1"]
+  r2["r2"]
+  c1["c1"]
+  c2["c2"]
 
-    max_vdd["module VDD"]
-    max_gnd["module GND"]
-    max_gain["module GAIN"]
-    max_ar["module A/R"]
-    max_out["module OUT"]
+  kit_3v3["kit_3v3"]
+  kit_gnd["kit_gnd"]
+  kit_tip["kit_tip"]
+  kit_sleeve["kit_sleeve"]
 
-    gain_1["GAIN header pin 1"]
-    gain_2["GAIN header pin 2"]
-    gain_3["GAIN header pin 3"]
-    ar_1["A/R header pin 1"]
-    ar_2["A/R header pin 2"]
-    ar_3["A/R header pin 3"]
-  end
-
-  kit_3v3 -- "wire 1" --- r1
-  r1 --- max_vdd
-  kit_gnd -- "wires 2 and 8" --- max_gnd
-  kit_sleeve -- "wires 4 and 5" --- max_gnd
-  kit_tip -- "wire 3" --- r2
-  r2 --- max_out
-
+  max_vdd --- max_gain
+  max_vdd --- r1
   max_vdd -- "+" --- c1
-  c1 -- "-" --- max_gnd
   max_vdd --- c2
-  c2 --- max_gnd
 
-  max_vdd --- gain_1
-  gain_1 === gain_2
-  gain_2 --- max_gain
-  gain_3 --- max_gnd
+  max_gnd --- c1
+  max_gnd --- c2
+  max_gnd -- "2 wires" --- kit_gnd
+  max_gnd -- "2 wires" --- kit_sleeve
 
-  max_vdd --- ar_1
-  ar_2 --- max_ar
-  ar_3 --- max_gnd
+  max_out --- r2
+
+  r1 --- kit_3v3
+  r2 --- kit_tip
 ```
 
 ### Checks
 
 - **Unpowered (meter):** no short between VDD and GND (the reading rises as the capacitors charge); about 2 µF between
-  VDD and GND before C1 and C2 are fitted (the module's own capacitor); GAIN and A/R open to both VDD and GND on the
-  bare module.
-- **Powered from the 3V3 header:** the VDD pin about 3.2 V; the GAIN pin equal to the VDD pin with the shunt on 1–2; OUT
-  about 1.25 V DC. If VDD is below about 3.0 V, replace R1 by a wire link or a smaller resistor.
+  VDD and GND before `c1` and `c2` are fitted (the module's own capacitor); GAIN and A/R open to both VDD and GND on
+  the bare module.
+- **Powered from the 3V3 header:** the `max_vdd` pin about 3.2 V; the `max_gain` pin equal to it with the strap fitted;
+  `max_out` about 1.25 V DC. If `max_vdd` is below about 3.0 V, replace `r1` by a wire link or a smaller resistor.
 
 ### The codec side
 
@@ -674,11 +646,11 @@ driver.
 |---|---|---|
 | ESP32-A1S "Audio Kit" board (ESP32 + onboard codec + battery mgmt) | Main MCU, audio codec, battery charge/boost | Candidate identified; **codec chip (ES8388 vs AC101) unconfirmed** |
 | MAX9814 electret mic + AGC breakout (5-pin: GND/VDD/GAIN/OUT/A/R) | Handset microphone | Confirmed part |
-| Microphone support parts: R1 22 Ω, R2 220 Ω, C1 47–100 µF electrolytic, C2 100 nF ceramic, two 3-pin 0.1" headers with shunts | Supply filter, output isolation and gain / attack-release straps at the module (see "Microphone") | Decided; values may change in stage 7 |
+| Microphone support parts: R1 22 Ω, R2 220 Ω, C1 47–100 µF electrolytic, C2 100 nF ceramic, and a short jumper wire for the GAIN strap | Supply filter, output isolation and gain strap at the module (see "Microphone") | Decided; values may change in stage 7 |
 | DRV8825 stepper driver module | Ring (bell) driver, run in "dumb" voltage-mode | Confirmed choice; specific listing not yet pinned down |
 | XL6019-family adjustable boost module (3-35V→5-40V, ~5A) × 2 | Ring-driver power: stage 1 (battery→~12V) and stage 2 (~12V→bench-tuned voltage) | Confirmed part, ×2 needed |
 | 3.7V LiPo battery (capacity TBD), JST-XH connector | Main system power | Not yet chosen — must match ESP32-A1S board's BAT+/BAT- connector |
-| 8-conductor coiled handset cord (8 straight wires) | Handset cord: mic supply, mic signal, two grounds each for supply and signal, and the earpiece pair (see "Handset cord") | Ordered 2026-09-20 |
+| 8-conductor coiled handset cord (8 straight wires) | Handset cord: mic supply, mic signal, two wires each for the power ground and the signal ground, and two for the earpiece (see "Handset cord") | Ordered 2026-09-20 |
 | Donor phone's rotary dial mechanism | Dialing input | Salvaged from donor phone |
 | Donor phone's bell ringer (2× ~2000Ω coils, gongs, clapper) | Ring output | Salvaged from donor phone |
 | Speaker/earpiece | Audio output to handset | **Open — reuse original receiver (pending impedance check) or replace** |
