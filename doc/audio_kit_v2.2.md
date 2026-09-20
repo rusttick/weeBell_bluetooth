@@ -19,6 +19,7 @@ Section 9 lists what to confirm on your specific board.
 - **[S]** Secondary: a web page, blog or product listing I read directly.
 - **[R]** Reported: appeared only in a search-engine summary, or the page could not be read. Unverified.
 - **[I]** Inferred by us.
+- **[T]** Tested on our board.
 
 ## 1. Bottom line
 
@@ -35,12 +36,12 @@ Section 9 lists what to confirm on your specific board.
 - **Microphone and line-in inputs share one codec input, and the reason is now confirmed** from the
   official module pin table and board schematic (section 5). The line-in jack is **LIN2/RIN2**, so the
   firmware must select `LINE2` (it selects `LINE1` today).
-- **The headphone jack is the codec's LOUT2/ROUT2**, so the firmware's output selection must change too
-  (section 5). It defaults to LOUT1/ROUT1 today, which is the speaker-amplifier path.
+- **The earpiece is on the speaker outputs (J3/J4):** the codec's LOUT1/ROUT1 through two class-D amplifiers that
+  are switched on by **IO21 high** (section 5). The headphone jack (LOUT2/ROUT2) is a bench-test output.
 - **There is no boost converter on the board** (this corrects the first design draft): on battery the
   "5 V" rail is just the battery voltage, and 3.3 V comes from a step-down regulator (section 7).
-- **A pin plan that works on either module version** is in section 6: inputs on the JTAG header
-  (IO13, IO14, IO15) and outputs on IO22 and IO19.
+- **The pin plan** is in section 6 (validated in stage 4): hook on IO13/MTCK, dial pulse on IO18,
+  dial-in-progress on IO23, STEP on IO22, nENABLE on IO19.
 
 ## 2. What is on the board
 
@@ -183,6 +184,10 @@ detect on **12**, SD card CS/MISO/MOSI/CLK on 13/2/15/14, card-detect on 34. **[
   line-in jack**. So the mics and the jack are mixed on one input, and LIN1/RIN1 is unused. This was
   previously a reported observation **[S]**; the official pin table and schematic now confirm it. The
   published fix moves C18 to C17's position and C20 to C19's position. **[S]**
+- **The line-in jack J1 and the headphone jack J2 are both ordinary 3.5 mm stereo TRS jacks** (6 pins in the schematic:
+  ground, left, right and two switch contacts; J2's switch also makes the HP-detect line on IO39). There is **no
+  separate microphone jack**: the codec's mic inputs go only to the two onboard microphones. A stereo plug has tip =
+  left, ring = right, sleeve = ground (confirm with a continuity check to C11 and C13). **[K]**
 - **Consequences for this project:**
   1. Our microphone goes into the **line-in jack** (LIN2/RIN2). The firmware selects
      `AUDIO_HAL_ADC_INPUT_LINE1` today; it must become **`AUDIO_HAL_ADC_INPUT_LINE2`**. This repo's
@@ -203,13 +208,17 @@ detect on **12**, SD card CS/MISO/MOSI/CLK on 13/2/15/14, card-detect on 34. **[
 | HPOUTL (27) | **LOUT2** (22 µF coupling) | headphone jack J2 (through R21) **[M]/[K]** |
 | HPOUTR (28) | **ROUT2** (22 µF coupling) | headphone jack J2 (through R20) **[M]/[K]** |
 
-- **The headphone jack is LOUT2/ROUT2.** This repo's `es8388.c` maps `AUDIO_HAL_DAC_OUTPUT_LINE2` to
-  `LOUT2|ROUT2`, so the earpiece needs **`AUDIO_HAL_DAC_OUTPUT_LINE2`**; the default is `LINE1`
-  (LOUT1/ROUT1, the speaker-amplifier path). **[P]/[I]**
+- **The headphone jack is LOUT2/ROUT2.** **Confirmed on this board (stage 6, 2026-09-19).** **The repo's `es8388.c`
+  output constants are wrong for the headphone jack:** it defines `DAC_OUTPUT_LOUT2 | ROUT2` (used by
+  `AUDIO_HAL_DAC_OUTPUT_LINE2`) as **0x28**, but the DAC power register (0x04) bit map is 5 LOUT1, 4 ROUT1, 3 LOUT2,
+  2 ROUT2, so 0x28 enables only the *left* channel of both outputs (and by the same map `DAC_OUTPUT_LINE1` = 0x14 would enable only the right; not tested).
+  The headphone jack, left and right, needs **0x0c**; `hwtest` writes 0x0c and gives equal sound in both ears.
+  The default `LINE1` is the speaker-amplifier path. **[T]**
 - The module has only the N side of each speaker output (the P pins are NC), so the amplifiers are driven
   single-ended. **[M]**
 - **The speaker amplifiers are off by default.** GPIO21 drives their CTRL pins through R46, and R51 pulls
-  that line to ground. **[K]** Leave GPIO21 alone.
+  that line to ground. **[K]** **The earpiece uses them, so IO21 is the amp enable: drive it high while audio plays**
+  (`hwtest`: `audio out spk`). Their outputs are bridged (+ and − per channel): neither pin may be tied to ground.
 - **Headphone-jack detect** is on GPIO39, pulled up by R36. **[K]** We can ignore it.
 
 ## 6. GPIOs you can actually use
@@ -221,7 +230,7 @@ detect on **12**, SD card CS/MISO/MOSI/CLK on 13/2/15/14, card-detect on 34. **[
 | **P2** (GPIO, bottom row) | IO21, IO22, IO19, IO23, IO18, IO5 |
 | **P3** (UART/reset, top row) | GND, IO0, RST, TX0, RX0, 3V3 |
 | **P4** | 3V3, GND |
-| **P1** (JTAG, 4 pins) | pin 1 JT_MTDO (IO15 via DIP SW5), pin 2 JT_MTCK (IO13 via DIP SW4), pin 3 IO12, pin 4 IO14 |
+| **P1** (JTAG, 4 pins) | **The pins are not numbered on the board; identify them by the silkscreen MT labels.** In order: **MTDO = IO15** (via DIP SW5), **MTCK = IO13** (via DIP SW4), **MTDI = IO12**, **MTMS = IO14** (schematic pins 1 to 4) |
 
 The SD pins (IO2, 4, 12, 13, 14, 15) are otherwise only on the SD slot.
 
@@ -230,12 +239,12 @@ The SD pins (IO2, 4, 12, 13, 14, 15) are otherwise only on the SD slot.
 | GPIO | Board wiring | Usable? |
 |---|---|---|
 | **IO22** | LED4 only (through R14 to 3.3 V; the LED lights when the pin is low) | **Yes**, output (the LED follows it) |
-| **IO19** | LED5 (through R76) **and** the key ladder (through R67, KEY3) | **Yes** if R67 is removed |
-| **IO13** | via DIP: KEY2, SD DATA3, JTAG MTCK | **Yes** via P1 pin 2, SW4 ON, SW1/SW2 OFF |
-| **IO15** | via DIP: SD CMD, JTAG MTDO | **Yes** via P1 pin 1, SW5 ON, SW3 OFF |
-| **IO14** | SD CLK (through R26), JTAG MTMS | **Yes** via P1 pin 4 |
+| **IO19** | LED5 (through R76) **and** the key ladder (through R67, KEY3) | **Yes**, output. Measured 2026-09-19: the pad follows a change after about 38 µs (ladder capacitance), so use it for a static signal only (nENABLE). R67 does not need removing. |
+| **IO13** | via DIP: KEY2, SD DATA3, JTAG **MTCK** | **Yes** via the P1 **MTCK** pin, SW4 ON, SW1/SW2 OFF |
+| **IO15** | via DIP: SD CMD, JTAG **MTDO** | **Yes** via the P1 **MTDO** pin, SW5 ON, SW3 OFF |
+| **IO14** | SD CLK (through R26), JTAG **MTMS** | **Yes** via the P1 **MTMS** pin |
 | **IO12** | SD DATA2 (pulled up), JTAG MTDI; strapping pin | **Avoid** |
-| **IO21** | speaker-amp CTRL | **No** |
+| **IO21** | speaker-amp CTRL (through R46; R51 pulls it low) | **Yes: the amp enable, an output** (the earpiece is on the speaker outputs) |
 | **IO23, IO18, IO5** | keys KEY4/5/6 **and, on the newest module only, the codec's I2C SCL, SDA and BCLK** | **Yes on this board** (older module, confirmed): only after removing R68 (IO23), R69 (IO18), R70 (IO5). IO5 is a strapping pin, so prefer IO18 and IO23 |
 | IO36, 39, 34 | key ladder, headphone detect, SD detect | input-only; not on a header |
 | IO25, 26, 27, 32, 33, 35 | codec I2S/I2C (internal) | No |
@@ -249,36 +258,33 @@ key pressed the ladder is fed from 3.3 V through R52 and R54, so each of those G
 through several series resistors, and grounding one drags its neighbours. **[I]** On the newest module this
 would couple into the I2C and I2S lines.
 
-**Caution: the microSD card (a project requirement, see `initial_design.md`) conflicts with the pin
-assignment below.** The SD slot needs IO14 (CLK), IO15 (CMD) and IO2 (DATA0) in 1-bit mode, plus IO4, IO12
-and IO13 in 4-bit mode. With the SD card, only IO13 (via P1 pin 2), IO22, IO19 (after removing R67) and IO21
-(after removing R46, which isolates it from the amp enable) remain clean; the plan in
-`validate_board_plan.md`, stage 4, decides how to get the fifth signal. The table below is the
-pre-SD proposal and is kept for reference.
+**Final pin assignment (validated in stage 4, 2026-09-19; the optional boot-safety check was skipped; works with the SD card; no board changes):**
 
-**Proposed pin assignment before the SD card requirement (works on either module version):** **[I]**
-
-| Signal | GPIO | Where |
+| Signal | GPIO | Where and how |
 |---|---|---|
-| Hook switch (input) | **IO13** | P1 pin 2, DIP **SW4 ON** |
-| Dial pulse (input) | **IO15** | P1 pin 1, DIP **SW5 ON** |
-| Dial-in-progress (input) | **IO14** | P1 pin 4 |
-| DRV8825 STEP (output) | **IO22** | P2 |
-| DRV8825 nENABLE (output) | **IO19** | P2, **remove R67** |
+| Hook switch (input, active-high) | **IO13 / MTCK** | P1 **MTCK** pin, DIP **SW4 ON**. Contact between the 3V3 pin and MTCK; the board's 10 kΩ pull-down (R15) holds it low. No external pull-up. Debounce in software (a hand-held jumper chattered for up to 1.5 ms). |
+| Dial pulse (input) | **IO18** | P2 header. Contact to GND, pull-up to 3V3 (external 4.7–10 kΩ; the internal one is fine on the bench). |
+| Dial-in-progress (input) | **IO23** | P2 header. Same as the dial pulse. |
+| DRV8825 STEP (output) | **IO22** | P2 header. Fast (LED4 only). |
+| Speaker-amp enable (output) | **IO21** | P2 header. High switches the two class-D amps on (the earpiece path); R51 holds it low otherwise. |
+| DRV8825 nENABLE (output) | **IO19** | P2 header. **Slow: the pad takes about 38 µs to follow** (key-ladder capacitance), so static signals only. Never STEP. |
 
-DIP switches: **SW4 and SW5 ON, SW1, SW2 and SW3 OFF.** IO21 stays unused.
+The SD slot keeps **IO14 (CLK), IO15 (CMD) and IO2 (DATA0)** in 1-bit mode. DIP switches: **SW3 ON** (IO15 to SD CMD)
+and **SW4 ON**; **SW1, SW2 and SW5 OFF**. IO5 and IO12 stay unused.
 
 Cautions:
 
-- **R15** (a resistor to ground on the JTAG lines, value not shown) may pull IO13 or IO15 low; measure it,
-  and use external pull-ups of about 4.7–10 kΩ to a 3.3 V header pin on all three inputs.
-- **IO14 goes to the SD slot's CLK pin**, and IO13/IO15 pull-ups on the SD side are disconnected by the DIP
-  switches; leave the SD slot empty. Measure IO14's idle level before relying on it.
-- **IO19's LED5** lights when the pin is low; harmless.
+- **R15** (a resistor to ground on the JTAG lines): **measured 10 kΩ from MTCK / IO13 to GND** (MTDO / IO15 reads
+  open). An external pull-up on MTCK would fight it (10 kΩ gives 1.65 V, 4.7 kΩ gives 2.2 V; the input needs about
+  2.5 V), so **MTCK is wired active-high with R15 as the pull-down and R15 is left as-is.**
+- **IO18 and IO23 have no pull-up on the board** (the key ladder gives none): unconnected they float and pick up
+  60 Hz mains hum, so the dial inputs need a pull-up.
+- **The on-board keys stay wired to their pins** (KEY4 to IO23, KEY5 to IO18, KEY6 to IO5) and would pull a pin to
+  GND if pressed. KEY3 (IO19) is broken open. The keys are decoupled from each other (tested).
+- **IO19's LED5 and IO22's LED4** light when the pin is low; harmless.
 - Add the **10–100 Ω series resistor** the spec recommends on each line, and keep each pin under **12 mA**.
-- **Output pins must be safe at boot:** the DRV8825 nENABLE also gets its own pull-up (already in the
-  design), so the bell stays off while pins float.
-- Avoid the strapping pins (0, 2, 5, 12, 15) as outputs; IO15 is used only as an input here.
+- **Output pins must be safe at boot:** the DRV8825 nENABLE also gets its own pull-up (already in the design), so
+  the bell stays off while pins float. Avoid the strapping pins (0, 2, 5, 12, 15) as outputs.
 
 ## 7. Power
 
@@ -307,8 +313,8 @@ Five switches on S1, for choosing what IO13 and IO15 do. **[K]**
 | **SW1** | IO13 connected to **KEY2** |
 | **SW2** | IO13 connected to the SD slot's **DATA3** |
 | **SW3** | IO15 connected to the SD slot's **CMD** |
-| **SW4** | IO13 connected to JTAG **MTCK** (P1 pin 2) |
-| **SW5** | IO15 connected to JTAG **MTDO** (P1 pin 1) |
+| **SW4** | IO13 connected to JTAG **MTCK** (the P1 pin labeled MTCK) |
+| **SW5** | IO15 connected to JTAG **MTDO** (the P1 pin labeled MTDO) |
 
 The schematic also shows two greyed-out jumper symbols (JP1/JP2) for the same signals, apparently not
 fitted. **[K]** For our pin plan, set **SW4 and SW5 ON and the other three OFF**.
@@ -326,7 +332,8 @@ fitted. **[K]** For our pin plan, set **SW4 and SW5 ON and the other three OFF**
 4. **Measure R15** and the idle voltage on IO13/14/15 with SW4/SW5 ON, and the resistance from IO19 to the
    key ladder before and after removing R67.
 5. **Battery connector:** identify the type and measure polarity before connecting a LiPo.
-6. **Confirm the speaker amp part** by reading its marking.
+6. **Confirm the speaker amp part** by reading its marking. **Done 2026-09-19: U4 and U5 are marked NS4150C
+   ("2548y1").** The earpiece is 3.4 Ω DC, marked 4 Ω.
 7. **Confirm the headphone jack is LOUT2/ROUT2** with a test tone.
 
 ## Sources

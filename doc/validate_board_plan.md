@@ -166,48 +166,63 @@ bootloader failing to find the partition table.
 
 **Goal:** find out which GPIOs we can actually use, given the board's wiring and the SD card requirement.
 
-**DIP:** SW4 ON (IO13 to P1), rest OFF; flip others only for the continuity checks.
+**DIP:** SW4 ON (IO13 to the P1 MTCK pin), rest OFF; flip others only for the continuity checks.
+
+**Tool:** the `hwtest` console commands `boot`, `pins`, `mode`, `set` and `watch` (see `hwtest/README.md`).
+Flash it as in stage 2. Only IO13/MTCK, IO18, IO23, IO22, IO19, IO5 and IO21 can be touched. **KEY3 (IO19) is
+broken open**, so IO19 is tested with a jumper wire to GND. IO21 (speaker-amp enable) is tested in stage 6.
 
 **The SD card changes the GPIO plan** (recorded in `initial_design.md`). In 1-bit mode the SD slot needs
 **IO14 (CLK), IO15 (CMD) and IO2 (DATA0)**; 4-bit mode also needs IO4, IO12 and IO13. The proposal in
 `audio_kit_v2.2.md` section 6 used IO13, IO14 and IO15 as inputs, which now **conflicts** with the SD card.
 
-1. **Multimeter first** (power off unless noted):
-   - Measure the **resistance from GND to each header GPIO** (IO19, 23, 18, 5, 22, 21) and the idle voltage
-     when powered. Note anything unexpected.
+1. **Multimeter, power off:**
+   - Measure the **resistance from GND to each header GPIO** (IO19, 23, 18, 5, 22, 21) and to the four P1 pins
+     (MTCK, MTDO, MTMS, MTDI). Note anything unexpected. **An ohmmeter on a MΩ range charges a floating pin above
+     3.3 V,** so take voltage readings first, or press the pin's key or reset the board afterward.
    - Confirm the DIP switches: with a beeper or ohmmeter, verify what each switch connects (from the spec:
      SW1 IO13–KEY2, SW2 IO13–DATA3, SW3 IO15–CMD, SW4 IO13–MTCK, SW5 IO15–MTDO).
-   - Find **R15** (a resistor to ground on the JTAG lines), **R46** (between IO21 and the amp enable),
-     **R67–R70** (key GPIO series resistors) and note their values, which the schematic does not print.
-2. **Firmware GPIO test** for each candidate pin: drive it as an output and watch an LED or the meter;
-   read it as an input with an external pull-up while touching the pin to ground.
-3. **Boot-state check (bell safety):** with a meter or scope on each pin we plan to use as an **output**
-   (STEP and nENABLE), watch the level during power-up and during a reset. Nothing should glitch high on
-   the bell driver's enable, and nothing should toggle before firmware starts.
-4. **Check the button ladder coupling:** with pull-ups fitted, ground one key GPIO and watch the others.
-   Repeat after removing the relevant series resistor (R67 for IO19).
-5. **Work out the GPIO budget with the SD card.** We need **3 inputs** (hook, dial pulse, dial-in-progress)
-   and **2 outputs** (STEP, nENABLE), and the SD slot takes IO14, IO15, IO2. Candidates that remain:
+2. **Idle voltages, USB powered:** read each of those pins to GND.
+3. **Starting levels:** press RESET, then run `boot` and `pins` with nothing touched. Record every level.
+   Expect IO13/MTCK = 0 (a 10 kΩ pull-down, probably R15). IO5, IO18 and IO23 have no pull-up on this board:
+   they float, and `watch` on them alone scrolls endlessly with mains hum.
+4. **Inputs and keys:**
+   - `mode 5 pu`, `mode 18 pu`, `mode 23 pu`, `mode 19 pu`; `pins` should show all four at 1.
+   - `watch 13 5 18 23 19`. Press and release KEY4 (IO23), KEY5 (IO18) and KEY6 (IO5). Each should print `-> 0`
+     on press and `-> 1` on release, and only that pin should change (**the keys must be decoupled from each
+     other**). KEY2 reaches IO13 only through DIP SW1, which stays OFF, so it is not part of this test. Touch a
+     jumper from IO19 to GND and remove it.
+   - **Hook input:** jumper a **3V3** pin to **MTCK**. IO13/MTCK should read 1, and 0 when removed.
+   - Note any contact bounce (several edges a few hundred microseconds apart), then `watch off`.
+5. **Outputs:** `mode <pin> in` on the inputs above. Then `mode 22 out 1`, `set 22 0`, `set 22 1` and measure
+   IO22 to GND each time (about 3.3 V and 0 V). **LED4 lights when IO22 is low.** Repeat for IO19 with **LED5**.
+   `set` prints how long the pad took to follow the new level; a slow or stuck pad means a load or something
+   holding the pin (IO19 shares its pin with the key ladder).
+   Return both with `mode 22 in` and `mode 19 in`.
+6. **Boot-state check (bell safety), optional:** an accidental ring is audible and easy to patch, and nENABLE has its own
+   external pull-up, so this may be skipped; stage 11 step 2 checks it with the real driver. With a meter or scope on IO22 and IO19 (the STEP and nENABLE pins), press
+   RESET and unplug and replug USB. Nothing should glitch, and nothing should toggle before firmware starts.
+   Without a scope, watch LED4 and LED5: a low pulse lights them, but a brief high glitch is invisible, so use a
+   scope for that if you have one. `boot` after the reset should match step 3.
+7. **Work out the GPIO budget with the SD card.** We need **3 inputs** (hook, dial pulse, dial-in-progress)
+   and **3 outputs** (STEP, nENABLE, speaker-amp enable), and the SD slot takes IO14, IO15, IO2. Candidates that remain:
 
    | Candidate | How it becomes usable | Note |
    |---|---|---|
-   | **IO13** | P1 pin 2 with DIP SW4 ON; SW1 and SW2 OFF | keep SW2 OFF so DATA3 stays pulled up on the card side |
+   | **IO13** | P1 **MTCK** pin with DIP SW4 ON; SW1 and SW2 OFF | measured 10 kΩ to GND: **hook contact between 3V3 and MTCK, active-high, no external pull-up, leave the pull-down in place**. Keep SW2 OFF so DATA3 stays pulled up on the card side |
    | **IO22** | free (LED4) | output |
-   | **IO19** | remove R67 to detach the key ladder | output (LED5 follows it) |
-   | **IO21** | remove R46 so the amp-enable line is isolated | the amps then stay off (R51 pulls their enable low) |
-   | **IO12** | P1 pin 3 | strapping pin; only after reading the eFuse result in stage 1 |
-   | IO18, 23, 5 | free only on an **older** module (on the newest they are the codec's) and after removing R68–R70 | depends on stage 3 |
+   | **IO19** | free (LED5 follows it) | output, **slow**: the pad takes about 38 µs to follow a change (capacitance from the key ladder). Use it only for the static nENABLE, never for STEP. KEY3 is broken, so no key interference |
+   | **IO18, IO23** | free on this **older** module (stage 3); the key ladder gives no pull-up | inputs, need a pull-up (external 4.7–10 kΩ, or internal) |
+   | **IO21** | free output; R46 links it to the speaker-amp enable, R51 holds that low | **speaker-amp enable**: the earpiece is on the speaker outputs, so the amps must be switched on (high) while audio plays |
+   | **IO5** | strapping pin | avoid; spare |
+   | **IO12** | P1 **MTDI** pin | strapping pin (flash voltage); avoid |
 
-   That gives **four** clean GPIOs on any module and a fifth only via IO12 or an older module.
-   **Stage 3 found the older module,** so IO18 and IO23 (and IO5) are available too, after removing
-   R69, R68 (and R70). The fifth signal is solved that way. If five are
-   not available, the options are: (a) drop the dial-in-progress input and rely on hook plus pulse only
-   (the current firmware's digit timing already works this way); (b) add a small I2C GPIO expander on the
-   codec's I2C bus (only possible on the newest module, where that bus is on the exposed IO18/IO23 pins);
-   (c) use IO12 as an input after checking the strapping behavior. **Decide here** and update the design.
+   That gives the six signals without changing the board: hook on IO13/MTCK, dial pulse on IO18,
+   dial-in-progress on IO23, STEP on IO22, nENABLE on IO19, speaker-amp enable on IO21. **Decide here** and
+   update the design.
 
-**Pass:** a documented, tested list of GPIOs for hook, pulse, (dial-in-progress), STEP, nENABLE that
-works with the SD card, and the boot-state check is clean.
+**Pass:** a documented, tested list of GPIOs for hook, pulse, dial-in-progress, STEP, nENABLE and the amp enable that
+works with the SD card, keys decoupled, and the boot-state check clean.
 
 ---
 
@@ -217,65 +232,322 @@ works with the SD card, and the boot-state check is clean.
 
 **DIP:** all OFF.
 
-1. **Initialize I2C** on the pair found in stage 3 at 100 kHz, address 0x10.
-2. **Read and write registers** using this repo's `es8388.c` driver, or a minimal version: write a register,
-   read it back, and confirm it matches. Reset the codec, then run the driver's init sequence with
-   `adc_input = LINE2` and `dac_output = LINE2` (line-in and headphone on this board).
-3. **Confirm no errors** and no crash. The codec draws its clock from **MCLK on GPIO0**, so I2S must be
-   running before audio works (stage 6).
+**Tool:** the `hwtest` command `codec` (`regs`, `rw`, `init`). The repo's `es8388.c` cannot be used as is (it is
+tied to the gCore board's I2C pins 21/22 and to `audio_hal`), so `hwtest/main/cmds_codec.c` repeats its
+`es8388_init()` register sequence over our own I2C bus: **SDA 33 / SCL 32** (stage 3), 100 kHz, address 0x10, I2S
+slave mode, `adc_input = LINE2`, `dac_output = LINE2` (line-in and headphone on this board). It enables no
+internal pull-ups, so a pass shows the module's own 10 kΩ pull-ups are enough.
+
+1. **Power-on registers:** `codec regs` after RESET. All 53 registers should read with no errors. Record them.
+2. **Read/write test:** `codec rw` writes six patterns to the two DAC volume registers (0x1a, 0x1b), reads each back
+   and restores the original. Expect all patterns to match.
+3. **Init:** `codec init` resets the codec, runs the init sequence and reads every register back. Expect no I2C
+   errors. A few registers may read back different from what was written (reserved bits); note which.
+4. **After init:** `codec regs` again and record it.
+5. **No audio yet.** The codec draws its clock from **MCLK on GPIO0**, so I2S must be running before audio works
+   (stage 6). Confirm nothing crashes and the console stays responsive.
 
 **Pass:** register write/read-back works and the init completes.
-**If it fails:** wrong I2C pins (stage 3), pull-ups (the module has 10 kΩ pull-ups already), or GPIO0 being
-driven by something else.
+**If it fails:** wrong I2C pins (stage 3), pull-ups (the module has 10 kΩ pull-ups already; try `pu` on the pins), or
+GPIO0 being driven by something else.
 
 ---
 
 ## Stage 6 — Audio output (earpiece path)
 
-**Goal:** a clean tone out of the headphone jack, and volume steps that behave.
+**Goal:** a clean tone from the earpiece path, and volume steps that behave. **The earpiece is on the speaker
+outputs (J3 and J4):** the codec's LOUT1/ROUT1 go through two class-D amplifiers, which are switched on by **IO21
+high**. The headphone jack (LOUT2/ROUT2) is used as a bench check.
 
 **DIP:** all OFF.
 
-1. **Start I2S** (BCLK/WS/data pins from stage 3; **MCLK on GPIO0**) and play a 1 kHz sine at 8 kHz sample
-   rate. Plug headphones into the **headphone** jack. Expect a clean tone in both channels.
-   *If silent:* check `dac_output = LINE2` (the headphone jack is LOUT2/ROUT2; LOUT1/ROUT1 is the amp
-   path), the volume registers, and the MCLK signal on GPIO0 with a scope if you have one.
-2. **Keep the speaker amps off** and confirm the speaker connectors stay silent (GPIO21 unused).
-3. **Sample rates:** repeat at 16 kHz, 22.05 kHz and 44.1 kHz. Note which work and which sound clean.
-   (The existing firmware runs the codec at 8 kHz; prompts may want a higher rate, see stage 8.)
-4. **Volume steps:** implement the 10-step mapping from `initial_design.md`
-   (`gain_dB = min + (k/11)·(max−min)`). Record the output amplitude at each step (recording on a phone or
-   an audio interface, or by ear with a note). Check that steps sound **even**, the lowest step is audible,
-   and the highest does not clip or distort. Note the values to narrow the wide starting range.
-5. **Noise check:** with silence playing, listen for hiss, hum or pops when the DAC starts and stops.
+**What the test firmware does:** the `hwtest` commands `audio`, `tone`, `vol`, `volstep` and `mute` play a sine wave
+through the codec. The ESP32 supplies the codec's clock (**MCLK on GPIO0**) and the I2S signals (BCLK 27, WS 25,
+data out 26). `audio on` starts them and runs the stage 5 codec setup. `audio out hp|spk|both` chooses the
+outputs: `hp` = headphone jack (the default), `spk` = speaker outputs plus IO21 high, `both` = both. The sine is
+-1 dBFS by default (`tone <Hz> <dBFS>` changes it). `vol` sets the output gain in dB, from -91.5 (silent) to +4.5 (loudest); the main firmware's earpiece range
+is -43.5 to +4.5. **The gain starts at -40 dB, which is quiet. Keep your ear away from the headphones and earpiece
+whenever you change the level, the sample rate or the output.**
 
-**Pass:** clean tone at the working rates, even volume steps, no unwanted amp output.
+**Speaker-output warning.** Each speaker output is a *bridge* (two pins, + and −, per channel), and **neither pin is
+ground**. Never connect either pin to ground or to a shared ground wire: the amplifier can be damaged. A vintage
+earpiece is not a 3 W speaker; start at a very low level and raise it slowly.
 
+### 1. Tone on the headphone jack (bench check)
+
+Plug headphones into the **headphone** jack, flash `hwtest` (see `hwtest/README.md`), and wait for `hwtest>`.
+Type each line, one at a time.
+
+| Type | What should happen |
+|---|---|
+| `audio on 8000` | Prints `audio on: 8000 Hz, ...` and `init completed`. No sound yet. |
+| `tone 1000` | Prints `tone 1000 Hz`. A very quiet 1 kHz tone starts (the gain is -40 dB). |
+| `vol -30` | A little louder. |
+| `vol -20` | Louder again. Stop at a comfortable level. |
+
+**Pass:** a clean, steady 1 kHz tone at equal volume in both ears, louder with each `vol` step. (Done 2026-09-19.)
+
+**If it goes wrong**
+- **Only one ear:** type `codec r 0x04`; it must read `0x0c`. If not, `codec w 0x04 0x0c`. (The repo's `es8388.c`
+  value 0x28 enables only the left channel; already fixed in `hwtest`.)
+- **Silent:** type `codec regs` and check 0x04 = 0x0c, 0x19 = 0x60 (0x64 means muted: `mute off`), 0x2e to 0x31 =
+  0x21, and 0x1a and 0x1b below 0xc0. Also `audio status`.
+- **Still silent:** the BCLK pin may be the newer-module one. Reset, type `audio pins 5 25 26`, and repeat. A scope
+  on GPIO0 shows whether MCLK is running.
+
+### 2. Speaker outputs: the earpiece path
+
+Connect a small test speaker (4 to 8 Ω) or the earpiece across the **+ and − pins of J3** (left) or J4 (right).
+Nothing to ground. Then:
+
+| Type | What should happen |
+|---|---|
+| `audio out spk` | Prints `output: speaker outputs (J3/J4)`. IO21 goes high (amps on); the headphone jack goes silent. |
+| `vol -40` | Very quiet. |
+| `tone 1000` | A quiet 1 kHz tone from the speaker or earpiece. |
+| `vol -30`, then `vol -20` | Louder in steps. Stop well before it is loud. |
+
+Also type `pins`: IO21 should read 1. Then `audio out hp`: the speaker should go silent and IO21 should read 0.
+
+**Pass:** a clean tone from the speaker outputs, and silence when they are switched off.
+
+### 3. Amps off when idle
+
+Type `audio off`. The speaker must be silent and `pins` must show IO21 = 0. Press RESET: the speaker must stay silent
+at boot (no pop or hiss).
+
+### 4. Sample rates
+
+On the speaker path (`audio out spk`), for each rate type the line, then `tone 1000`, then listen:
+
+`audio on 16000`, `audio on 22050`, `audio on 44100`
+
+Note which rates work and which sound clean. (The existing firmware runs the codec at 8 kHz; recorded prompts may
+want a higher rate, see stage 8.)
+
+### 5. Volume steps
+
+The design has 10 volume levels on the dial, digit 1 quietest and digit 0 loudest, evenly spaced in dB. With a tone
+playing on the earpiece path (`audio on 8000`, `audio out spk`, `tone 1000`), type `volstep 1`, then `volstep 2`,
+and so on to `volstep 9`, then `volstep 0`. Each prints the step and the gain in dB and changes the volume.
+
+For each step, write down what you hear or measure (hold a phone recorder near the earpiece, or use an audio
+interface, and note the amplitude). Then check:
+- the steps sound **evenly spaced** (each about the same jump),
+- step 1 is still **audible**,
+- step 0 does **not clip or distort**, and is not painfully loud.
+
+If the low steps are too quiet or the top step is too loud or distorts, narrow the range with
+`volstep <digit> <min_dB> <max_dB>`, for example `volstep 1 -30 -5`, and note the min and max that sound right.
+Those become the final range constants.
+
+| Digit | Gain (dB) | What I heard or measured |
+|---|---|---|
+| 1 | | |
+| 2 | | |
+| 3 | | |
+| 4 | | |
+| 5 | | |
+| 6 | | |
+| 7 | | |
+| 8 | | |
+| 9 | | |
+| 0 | | |
+
+### 6. Frequency response and level (earpiece)
+
+**Skipped (2026-09-20):** level differences between tones cannot be judged accurately by ear. Revisit with real Bluetooth
+audio in stage 9 if the earpiece sounds harsh; the `eq` command and the capacitor options below are ready.
+
+**Judge the level at 1 kHz, not at low tones.** A small earpiece and the ear are both far less sensitive at 40 Hz than
+at 1 kHz (the difference is tens of dB), so a level that is just audible at 40 Hz will be very loud at 1 kHz. The
+phone carries speech from about 300 Hz to 3.4 kHz; a 1 kHz tone is the telephone reference.
+
+1. Set the pad resistor (step 7, noise) so that `tone 1000` at `vol 4.5` is the loudest level you would ever want.
+   With 820 Ω in each leg (about -52 dB) 1 kHz was still too loud: try 1.5 kΩ (-57.5 dB), 2.2 kΩ (-60.8 dB) or
+   4.7 kΩ (-67.4 dB).
+2. Then sweep `tone 300`, `tone 500`, `tone 1000`, `tone 2000`, `tone 3000` at the same `vol` and note how the level
+   changes. A small earpiece is usually loudest and harshest in the 1 to 3 kHz range.
+3. To tame the highs, use the software filter `eq`: `eq lp 3000` (low-pass at 3 kHz) or `eq hs 1500 -6` (6 dB less
+   above 1.5 kHz). It prints the response it will give. Repeat the sweep and listen; use `eq off` to compare. Note the
+   `eq` setting that sounds best: it becomes a filter in the firmware's playback path (8 kHz speech; the filter costs
+   almost nothing there).
+
+**Hardware filters with a capacitor** (numbers for 820 Ω in each leg and a 4 Ω earpiece; the corners move if the
+pad resistors change):
+- **In series with the earpiece** it forms a high-pass with the total series resistance (about 1644 Ω): corner
+  `1 / (2π · 1644 · C)`. 3300 µF does nothing (0.03 Hz). A **film or ceramic** 1 µF gives 97 Hz (60 Hz -5.6 dB),
+  0.47 µF gives 206 Hz (-11 dB), **0.33 µF gives 293 Hz (60 Hz -14 dB, 300 Hz -2.9 dB, 1 kHz -0.4 dB)**, 0.1 µF gives
+  968 Hz. This cuts hum and rumble below the speech band.
+- **Across the earpiece** it forms a low-pass with the earpiece's 4 Ω: corner `1 / (2π · 4 · C)`. 3300 µF gives
+  12 Hz, which kills everything above bass (1 kHz -38 dB). For a gentle treble cut use 10 µF (corner 4 kHz, 3 kHz
+  -2 dB) or 22 µF (1.8 kHz, 3 kHz -5.7 dB), **non-polar** (film, or two electrolytics back to back).
+- An electrolytic such as the 3300 µF is polarized and is meant for DC bias, so it is the wrong part for an AC audio
+  signal in any case. The software `eq` gives the same results without soldering: `eq hp 300` and `eq lp 3000`.
+
+### 7. Noise and pops
+
+- **Hiss or hum:** type `tone off` (silence with audio on). Listen for hiss or hum from the earpiece.
+- **Pops:** type `mute on` then `mute off`, `audio out hp` then `audio out spk`, and `audio off` then
+  `audio on 8000`. Listen for clicks or pops, especially when the amps switch on.
+
+**Pass:** clean tone at the working sample rates, even volume steps, silence when the amps are off, no bad noise
+or pops.
+
+**If the noise floor is too high.** Measured 2026-09-19 on the speaker outputs: the hiss does **not** change with
+`mute on` or with `vol -80` versus `vol -10`. So it is added after the digital signal and the volume control, by
+the codec's analog output stage or by the amplifier, and no digital or volume setting can remove it. What decides
+how audible it is: the signal-to-noise ratio at the earpiece, which is the maximum clean signal divided by that
+fixed hiss.
+
+1. **Give the amplifier the biggest clean signal.** Run the tone near full scale (`tone 1000` now defaults to -1
+   dBFS) and the volume at its top (`vol 4.5`), and check it does not distort. The main firmware must do the same:
+   use the full range of the codec, and never leave the audio quiet in the digital domain and turn up the analog gain.
+2. **The amplifier has far more gain than the earpiece needs, so reduce the loudness after the codec, not before it.**
+   Quieting the codec makes the signal smaller under the same hiss. Two hardware options, best first:
+   - **Resistor pad after the amplifier.** Series resistors in both legs (never to ground). It lowers the signal and
+     the hiss together, so the codec can be driven at full scale for the same listening level. Attenuation is
+     `Z / (Z + 2R)` for an earpiece of impedance Z and R in each leg. **Our earpiece is 3.4 Ω DC, marked 4 Ω**, so
+     Z = 4 Ω: R = 10 Ω in each leg gives about -15.6 dB, 33 Ω -25 dB, 75 Ω -31.7 dB, 100 Ω -34.2 dB, 150 Ω -37.6 dB,
+     220 Ω -40.9 dB, 330 Ω -44.4 dB and 470 Ω -47.5 dB. Use through-hole resistors in series with the two speaker
+     wires at J3 (or J4); check there is one in **each** leg. **33 Ω and 75 Ω were still too loud**: an earpiece at the
+     ear needs about 1 mW or less, and the amplifier gives up to 3 W, so expect to need about -40 dB or more. Choose R
+     so that `vol 4.5` with `tone 1000` (the codec at full scale) is the loudest level ever wanted.
+   - **Lower the amplifier's gain.** U4 and U5 are marked **NS4150C**, a filterless class-D amplifier (3 W into 4 Ω)
+     whose gain is set by the input resistors (R47 to R50): from memory of its datasheet, `gain = 2 × 150 kΩ / Ri`
+     (confirm in the datasheet). Larger Ri lowers the gain. This is an SMD change and it does not attenuate the
+     amplifier's own output noise, so the pad above is better.
+3. **Rule out the power supply.** Compare the computer's USB port with a phone charger or a battery pack. If the hiss
+   changes, the supply is the source (see stage 12).
+4. **Other things to try:** `codec w 0x03 0xff` (power down the unused ADC), and `audio off` to confirm the hiss stops
+   when the amplifier is off (IO21 low).
+5. **Filtering in software cannot remove it.** The hiss is generated after the digital audio.
+
+Record which steps helped in `doc/validation_log.md`.
 ---
 
 ## Stage 7 — Audio input (microphone path)
 
-**Goal:** a clean signal from the line-in jack, isolated from the onboard mics.
+**Goal:** a clean signal from the line-in jack, with the onboard microphones excluded, only one line-in channel used,
+and the best signal-to-noise from the MAX9814.
 
 **DIP:** all OFF.
 
-1. **Line-in test first:** feed a tone from a phone into the **line-in** jack with `adc_input = LINE2`.
-   Capture with I2S, and either loop it back to the headphones or compute its level. Expect a clean copy of
-   the tone.
-2. **Show the known bug on purpose:** with the onboard mics still connected (C18 and C20 fitted), talk near
-   the board while the line-in is silent. If you hear or capture your voice, the mics are mixed into line-in
-   as documented.
-3. **Isolate the mics:** remove **C18 and C20** (or the mic parts). Repeat step 2; the voice should
-   disappear. Record what you removed.
-4. **Set the gain:** with the real **MAX9814 module**, determine the ADC gain that gives a good level
-   without clipping. Note that the MAX9814 output is DC-biased; the board's line-in coupling capacitors
-   (C11, C13) block that.
-5. **Long cord test:** connect the MAX9814 through the actual **coiled 3-conductor cord** and check for
-   noise, hum and pickup of the ring driver later (stage 11).
-6. **Noise floor:** record 30 s of silence; note the noise level.
+**How the input path is set up** (by `audio on`, in firmware)
+- **Line-in, left channel only.** The plug tip is the left channel. The codec's right input and right ADC are switched off
+  (ADC power register 0x03 = 0x59) and the left ADC is sent to both I2S slots (register 0x0c = 0x4c). The main firmware
+  also reads only the left slot.
+- **No extra gain after the MAX9814:** the codec's input amplifier is 0 dB (the driver's default is +9 dB) and the ADC
+  digital gain is 0 dB.
+- **The onboard microphones cannot be excluded in firmware.** They connect to the same codec inputs as the line-in jack
+  (LIN2/RIN2, through C18 and C20). **Remove the microphone modules** (test 2).
+- **No software filtering** on the microphone path.
 
-**Pass:** clean voice from the MAX9814 into LIN2/RIN2 with the onboard mics isolated, gain chosen.
+**The test commands** (type `audio on 8000` first; `audio on` resets the input settings):
 
+| Command | What it does |
+|---|---|
+| `mic status` | Shows the input settings. |
+| `mic avg [seconds]` | Measures for that many seconds (default 5) and prints the left and right RMS, peak and DC level in dBFS, and whether the right channel is an exact copy of the left. |
+| `mic snr [label]` | The signal-to-noise test: 5 s of silence, 5 s of speech, 5 s of silence, with on-screen prompts and a 3-second countdown before each. Prints the silence level before and after, the speech RMS and peak, clipped samples, the signal-to-noise, and a one-line summary tagged with the label. |
+| `mic level [seconds]` | Live left and right levels every half second (for watching while you adjust something). |
+| `mic chan left\|both` | `left` = the setup above (default). `both` = both channels, for test 3 only. |
+| `mic pga <0-8>`, `mic gain <dB>`, `mic gate on\|off` | Codec input gain (3 dB per step), ADC digital gain, noise gate. Leave them at the defaults. |
+
+Levels are in dBFS: 0 is full scale and lower numbers are quieter (-60 is much quieter than -20).
+
+### Test 1. Noise floor with nothing connected
+
+**Setup:** nothing plugged into the line-in jack; the room quiet; the onboard microphones still fitted.
+**Type:** `audio on 8000`, `mic status`, `mic avg 10`.
+**Expect:** both channels at a low level. **Record** the left and right RMS and the DC.
+
+### Test 2. Onboard microphones: show the problem, then remove them
+
+**2a. With the microphones fitted.** **Setup:** as in test 1. **Type:** `mic snr mics-fitted` and follow the prompts,
+speaking close to the board during the speech phase.
+**Expect:** `speech : rms ...` lines and a signal-to-noise figure: the microphones are heard through the line-in path
+(the documented board bug). **Record** the speech RMS.
+
+**2b. Remove the microphone modules** (note their markings and designators) and repeat: `mic snr mics-removed`.
+**Expect:** **`NO VOICE DETECTED`**. That is the pass. If a voice is still detected, another microphone part is fitted:
+look for it on the board, or as a fallback remove C18 and C20.
+
+### Test 3. Only one line-in channel is used (the other cannot mix in)
+
+**Setup:** a phone or player with a **stereo test tone** (search for "stereo channel test", or record a tone panned fully
+left or fully right). Plug it into the line-in jack. Turn it up to a moderate level.
+
+| Step | Play | Type | Expect |
+|---|---|---|---|
+| 3a | tone on the **right** channel only | `mic chan both`, then `mic avg 5` | right RMS loud (well above the noise floor of test 1); left near the floor |
+| 3b | same tone, right only | `mic chan left`, then `mic avg 5` | **both left and right near the floor**; "right equals left in 100%" |
+| 3c | tone on the **left** channel only | `mic avg 5` (still `chan left`) | left and right both loud and equal; "right equals left in 100%" |
+
+**Pass:** 3b shows no sign of the right-channel tone. If it fails, the register values need correcting: read the
+registers with `codec r 0x03`, `codec r 0x0c`, correct them from the ES8388 datasheet with `codec w`, and record the
+working values.
+
+### Test 4. MAX9814 gain: 40, 50 and 60 dB
+
+**Setup:** the MAX9814 wired to the line-in tip and sleeve, with its supply filter (see the notes below). The GAIN pin
+picks the gain: **VCC = 40 dB, GND = 50 dB, open = 60 dB**. Keep the module at the distance it will have from the mouth.
+For each setting, **power the module off and on** after changing the pin, then:
+**Type:** `audio on 8000`, then `mic snr 40dB` (or `50dB`, `60dB`). Follow the prompts; in the speech phase count
+"one two three ..." at a normal level.
+
+**Record** in this table (copy the values from the printed lines):
+
+| GAIN pin | Silence before | Silence after | Speech RMS | Speech peak | Clipped samples | Signal-to-noise |
+|---|---|---|---|---|---|---|
+| 40 dB (VCC) | | | | | | |
+| 50 dB (GND) | | | | | | |
+| 60 dB (open) | | | | | | |
+
+**How to read it**
+- **Signal-to-noise** is speech RMS minus silence RMS. **Aim for at least 40 dB.**
+- **Speech peak** must be **at or below -6 dBFS**, with **no clipped samples**.
+- **Silence after** much higher than **silence before** means the AGC is boosting room noise in the pauses.
+- **Choose** the setting with the best signal-to-noise that meets the peak and clipping limits. If two are close,
+  take the lower gain.
+- Then try the attack/release pin (AR: open = 1:4000, **VCC = 1:2000, GND = 1:500**) at the chosen gain, for example
+  `mic snr 40dB-AR2000`, and keep the setting with the smaller rise after speech.
+
+### Test 5. Power source (ground-loop hum)
+
+With the chosen gain: `mic snr usb` powered from the computer's USB port, then `mic snr charger` powered from a phone
+charger or battery pack (and no computer connection except for the console, if you must). **Record** both
+signal-to-noise figures. A better figure on the charger means the computer's USB adds noise.
+
+### Test 6. The real cord
+
+Connect the MAX9814 through the **8-conductor cord** with the planned wire use, then: `mic avg 30` (silent, 30
+seconds), and `mic snr cord`. **Expect** the silence level and signal-to-noise within about 3 dB of the direct
+wiring. A worse result means pickup or a shared-ground problem in the cord.
+
+### Test 7 (later, with stage 11). Ring driver running
+
+Repeat `mic avg 30` and `mic snr ringing` while the bell is being driven, to check for interference on the input.
+
+### Wiring and noise notes (hardware only)
+
+- **Clean supply at the module:** the 3.3 V header comes from a switching regulator. Fit a **22 Ω series resistor,
+  47 to 100 µF and 100 nF** at the module's VCC and GND pins (corner about 70 to 150 Hz).
+- **Keep supply current out of the signal return.** The 8 straight wires are: 1 VCC, 2 power GND, 3 mic OUT, 4 and 5
+  signal GND (the jack sleeve), 6 earpiece +, 7 earpiece −, 8 power GND. Join the two grounds only at the module's single
+  GND pin. Twisting is not needed: the mic OUT is a low-impedance output and the earpiece pair carries only millivolts
+  (the 820 Ω pad is at the amplifier end).
+- **Why the gain is measured:** more gain does not improve the MAX9814's own signal-to-noise (its input noise is amplified
+  with the speech); it only helps against noise added afterwards. The handset mic is close to the mouth, and (from
+  memory of the datasheet) the AGC can lower the gain only about 20 dB, so 60 dB can clip a loud close voice and boosts
+  room noise in the pauses.
+- **Optional hardware high-pass, only if hum or rumble is a problem:** a film capacitor in series between OUT and the
+  jack tip; the corner is `1 / (2π · R_in · C)` with R_in the codec's line-in resistance (10 kΩ with 0.1 µF is 160 Hz).
+- **Placement:** keep the module away from the earpiece (feedback).
+
+**Pass:** the microphones report `NO VOICE DETECTED`, the right channel cannot mix in (test 3b), and the chosen MAX9814
+setting gives a signal-to-noise of at least 40 dB with speech peaks at or below -6 dBFS and no clipping, also through the
+real cord.
 ---
 
 ## Stage 8 — SD card for voice prompts
@@ -299,12 +571,14 @@ driven by something else.
    pins.)
 4. **Speed test:** measure sequential read speed in 1-bit mode. Voice at 44.1 kHz, 16-bit mono needs about
    90 KB/s, so the requirement is easily met; the goal is finding **latency** and **hiccups**.
-5. **Playback:** stream a 16-bit mono WAV from the SD card to the codec at **16 kHz, 22.05 kHz and
+5. **Playback:** stream a 16-bit mono WAV from the SD card (a clip inside the single bank file, or a separate file) to the codec at **16 kHz, 22.05 kHz and
    44.1 kHz** while the rest of the system idles. Listen for dropouts. Try streaming while Bluetooth is
    active (stage 9 repeats this).
 6. **Scale test:** put **hundreds of files** on the card (the plan has many prompts and variants) and
    measure the time to open a file by name. Check that file names follow the clip IDs in
-   `audio_clips.md`.
+   `audio_clips.md`. **Then compare the bank option** (`audio_clips.md`: one large WAV plus an index): seek to random
+   clips inside one file of the same total size and measure the seek plus first read, with and without
+   `CONFIG_FATFS_USE_FASTSEEK`. Use the bank if that is under about 20 ms.
 7. **Reliability:** cycle power 50 times with the card inserted; remove and reinsert it while running
    (card-detect is on IO34). Confirm no corruption.
 8. **Card sizes and brands:** try at least two cards. The spec claims support for cards up to 64 GB.
@@ -347,9 +621,9 @@ files fine.
 
 **Goal:** reliable digit and hook detection from the actual contacts.
 
-**DIP:** SW3 + SW4 ON, rest OFF (final config; hook on IO13 if stage 4 confirms).
+**DIP:** SW3 + SW4 ON, rest OFF (final config; hook on IO13 / MTCK if stage 4 confirms).
 
-1. **Wire the contacts** to the chosen GPIOs with pull-ups (stage 4), the 10–100 Ω series resistors and, if
+1. **Wire the contacts** to the chosen GPIOs (stage 4): pull-ups on the dial inputs, and for the hook on IO13 / MTCK the contact between 3V3 and MTCK (active-high, R15 is the pull-down), the 10–100 Ω series resistors and, if
    the wiring is long, small filter capacitors.
 2. **Log raw edges** with microsecond timestamps while dialing each digit 1–9 and 0. Measure the pulse rate
    (expect about 10 per second) and break/make ratio (about 60/40), and note how much your dial deviates.
@@ -438,13 +712,13 @@ Validation is finished when every row below is **confirmed working** on the real
 
 | Capability | Stage | Confirmed |
 |---|---|---|
-| USB serial and flashing (method documented) | 1 | |
-| Our own code runs; console output visible | 2 | |
-| Module variant and I2C pins identified | 3 | |
-| PSRAM (8 MB chip, about 4 MB in the heap) | 3 | |
-| GPIO plan proven, boot-safe, works with SD | 4 | |
-| Codec control over I2C | 5 | |
-| Earpiece audio out, chosen sample rates, even volume steps | 6 | |
+| USB serial and flashing (method documented) | 1 | 2026-09-19 |
+| Our own code runs; console output visible | 2 | 2026-09-19 |
+| Module variant and I2C pins identified | 3 | 2026-09-19 |
+| PSRAM (8 MB chip, about 4 MB in the heap) | 3 | 2026-09-19 |
+| GPIO plan proven, works with SD (boot-state check optional) | 4 | 2026-09-19; boot check skipped, accepted risk, checked in stage 11 |
+| Codec control over I2C | 5 | 2026-09-19 |
+| Earpiece audio out, chosen sample rates, even volume steps | 6 | 2026-09-20 |
 | Microphone in (MAX9814), onboard mics isolated, gain chosen | 7 | |
 | SD card: mount, boot-safe, high-resolution playback, hundreds of files | 8 | |
 | Bluetooth: pairing (passkey), calls, two-way voice | 9 | |
@@ -460,8 +734,8 @@ Validation is finished when every row below is **confirmed working** on the real
 | Final pin assignments | stages 3 and 4 (module variant, GPIO budget with SD) |
 | Whether to keep the dial-in-progress input | stage 4 |
 | Codec I2C/I2S pins in the firmware | stage 3 |
-| Clip format and sample rate; SD 1-bit vs 4-bit; fallback prompts | stages 6 and 8 |
-| Volume ranges (the wide starting values) | stage 6 |
+| Clip format (decided: 8 kHz and 16 kHz banks); SD 1-bit vs 4-bit; fallback prompts | stage 8 |
+| Volume ranges (decided: keep the `gain.h` values) | stage 6 |
 | Echo canceller kept or dropped | stage 9 |
 | Ring frequency, voltage, cadence | stage 11 |
 | Battery cutoff and whether to read battery voltage | stage 12 |

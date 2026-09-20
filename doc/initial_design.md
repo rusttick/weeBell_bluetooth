@@ -79,14 +79,21 @@ the final build target (those remain as spares/dev boards for other experiments)
   on ES8388 V2.2 boards the line-in jack and the onboard microphones share the codec's LIN2/RIN2
   input, and LIN1/RIN1 is unused. So the MAX9814 goes into the line-in jack, the firmware must select
   `LINE2` for input (today it selects `LINE1`), and the onboard mics must be isolated (remove C18 and
-  C20) so they don't mix into the handset mic. The headphone jack is the codec's **LOUT2/ROUT2**, so
-  output must select `LINE2` too (the default `LINE1` is the speaker-amplifier path).
+  C20) so they don't mix into the handset mic. **The earpiece is on the speaker outputs (J3/J4)**: the codec's
+  LOUT1/ROUT1 through the two class-D amplifiers, switched on by IO21 high. (The headphone jack, LOUT2/ROUT2, is a
+  bench-test output.)
 - **What the chips on the board are.** The Silicon Labs **CP2102** is the USB-to-UART bridge for
   programming and the serial console (UART0, GPIO1/3); it is **not** an amplifier. The audio codec is
   **inside the shielded ESP32-A1S module**, which is why the audio traces go straight into it. It can't
   be read off the board; identify it from an I2C scan (ES8388 at 0x10, AC101 at 0x1A). Two small
   class-D speaker amplifiers sit on the board and are **off by default** (a pull-down holds their enable
-  line low); we use the codec's headphone output for the earpiece, so **leave GPIO21 alone**.
+  line low); the earpiece is on their outputs, so **IO21 is the amp enable, driven high while audio plays**.
+  Their outputs are bridged: neither speaker pin may be tied to ground. **Earpiece drive (stage 6, 2026-09-20):**
+  the amplifiers are NS4150C (3 W into 4 Ω) and the earpiece is 4 Ω (3.4 Ω DC), so the hiss is audible and the level
+  far too high when driven directly. **Fitted: a series resistor of 820 Ω in each speaker leg** (a pad, about -52 dB),
+  with the codec near full scale. No audible noise; still slightly loud. The firmware must use the codec's full range
+  (never quiet audio in the digital domain with the analog gain turned up). Tone shaping (a high-pass near 300 Hz, a
+  treble cut) is done later in software (`eq`) once real Bluetooth audio is playing.
 - **Pins change.** The firmware's current pin assignments are for the gCore board
   (I2C 21/22, I2S 25/19/26/34, ring 32/33, hook 35). The newest ES8388 A1S module puts the codec on
   I2C SDA 18 / SCL 23 and I2S BCLK 5 / WS 25 / DOUT 26 / DIN 35 / MCLK 0; older modules use I2C 33/32 and
@@ -96,11 +103,11 @@ the final build target (those remain as spares/dev boards for other experiments)
   on the JTAG header). IO21 controls the speaker amps; IO23/18/5 are the codec's I2C and BCLK on the
   newest module; IO19 and IO23/18/5 are also wired into the button resistor ladder. We need **three
   inputs** (hook, dial pulse, dial-in-progress) and **two outputs** (DRV8825 STEP and nENABLE).
-  **Proposed** (works on either module version): inputs on **IO13, IO15, IO14** via the JTAG header
-  (DIP switches SW4 and SW5 ON, SW1–SW3 OFF); outputs **IO22 (STEP)** and **IO19 (nENABLE)**, removing
-  resistor R67 to detach IO19 from the button ladder; external pull-ups on the inputs; the 10–100 Ω
-  series resistor the spec recommends on each line; IO21 unused. Reasoning in `doc/audio_kit_v2.2.md`,
-  section 6.
+  **Decided** (stage 4, validated on the board; the optional boot-safety check was skipped; works with the SD card): hook on **IO13 (MTCK)**, active-high with
+  the board's 10 kΩ pull-down and the contact to 3V3 (DIP SW4 ON); dial pulse on **IO18** and dial-in-progress on
+  **IO23**, each with a pull-up; **IO22 = STEP** and **IO19 = nENABLE** (IO19 is slow, about 38 µs, so static
+  signals only); **IO21 = speaker-amp enable**; the 10–100 Ω series resistor the spec recommends on each line. Reasoning in
+  `doc/audio_kit_v2.2.md`, section 6.
 - Battery: 3.7V LiPo on the board's 2-pin battery connector (type and polarity not stated; check
   before connecting), with an onboard linear charger. **Correction to the first draft:** the
   schematic shows **no boost converter**. On battery the "5V" rail is simply the battery voltage
@@ -126,7 +133,133 @@ the final build target (those remain as spares/dev boards for other experiments)
   (6-8ft) coiled cord, which is far more noise-resistant than running a raw
   high-impedance capsule signal that distance.
 - Cord: a repurposed coiled 3-conductor (TRS) headphone extension cable — tip/ring
-  carry mic-out and speaker signal, sleeve is shared ground.
+  carry mic-out and speaker signal, sleeve is shared ground. **Open item (2026-09-20): this no longer works.** The
+  earpiece is on the bridged speaker outputs (two wires, neither may be ground) and the MAX9814 needs VCC, GND and
+  OUT, so the handset cord needs **five conductors**: VCC, GND, mic OUT, earpiece +, earpiece −. **Decided
+  (2026-09-20): an 8-conductor cord has been ordered.** The cord is **8 straight wires** (they cannot be twisted or routed).
+  Planned use: 1 mic VCC (3V3), 2 power GND (the VCC return), 3 mic OUT, 4 and 5 signal GND (the line-in jack sleeve; two
+  wires in parallel), 6 earpiece +, 7 earpiece −, 8 power GND (in parallel with 2). Join the power and signal grounds only at
+  the module's GND pin, so supply current stays out of the signal return. The 820 Ω earpiece pad stays at the amplifier
+  end, so the cord carries only the small, attenuated earpiece signal. Check the cord's actual layout with a meter before
+  soldering. No software filtering is planned on the microphone path.
+- **Wiring (to be confirmed on the bench in stage 7):**
+
+  | MAX9814 pin | Connect to | Notes |
+  |---|---|---|
+  | VCC | a **3V3** header pin | supply is 2.7 to 5.5 V; the board's 3.3 V header pin is enough for the module's few mA |
+  | GND | GND (a header GND pin, or the line-in jack sleeve) | one common ground with the codec |
+  | OUT | line-in jack J1, the **tip** (left, LINEINL to codec LIN2); optionally also the ring (right, RIN2) | the firmware reads the left channel. OUT sits at about 1.25 V DC; the board's coupling capacitors (C11, C13) block it. Confirm which plug contact reaches C11 and C13 with a continuity check. |
+  | GAIN | floating = 60 dB (default), GND = 50 dB, VCC = 40 dB | from the MAX9814 datasheet; confirm on the module. Start at 40 or 50 dB if the room noise is loud. |
+  | AR | floating = 1:4000 (default), **VCC = 1:2000, GND = 1:500** | attack/release ratio of the AGC (MAX9814 datasheet, Table 1) |
+
+- **What is already on the module.** If it is the Adafruit MAX9814 board (product 1713; confirm below), its EAGLE schematic
+  shows: the header order **GND, VDD, GAIN, OUT, A/R** (check the silkscreen); a **ferrite bead in series with VDD and one
+  in series with GND** between the header and the chip; a **2.2 µF ceramic** across the chip's supply; /SHDN tied to VDD; the
+  electret capsule with a 2.2 kΩ bias resistor; and small timing and decoupling parts on the chip (0.1 µF on CT, 2.2 µF on
+  CG, 0.47 µF on BIAS, a 0.1 µF input coupling capacitor, a 150 kΩ / 100 kΩ threshold divider). **OUT goes straight from the
+  chip to the header: no series resistor and no output capacitor.** GAIN and A/R go straight to the chip with no strap
+  (open = 60 dB, 1:4000). No electrolytic. Supply 2.7 to 5.5 V at about 3 mA.
+  **Confirm your module matches** (unpowered, meter): capacitance from the VDD header pin to the GND header pin reads about
+  2 µF; the GAIN and A/R pins read open to both VDD and GND.
+- **Components at the module** (fit them at the MAX9814's own pins, in the handset, not at the far end of the cord). They do
+  not duplicate the module's parts: C2 (before the module's ferrite bead) and the module's own 2.2 µF form a
+  capacitor-inductor-capacitor filter, C1 and R1 add the low-frequency filtering, and R2 has no equivalent on the module:
+
+  | Part | Value | Where |
+  |---|---|---|
+  | R1 | **22 Ω**, 0.25 W | in series with the supply: cord wire 1 (3V3) to the filtered node |
+  | C1 | **47 to 100 µF**, 10 V electrolytic (a 3300 µF 6.3 V also works electrically) | from the filtered node (+) to GND (−) |
+  | C2 | **100 nF** ceramic (X7R) | from the filtered node to GND, as close to the pins as possible |
+  | R2 | **220 Ω** (decided: fit it) | in series with OUT, at the module end: isolates the cord's capacitance from the amplifier output and adds RF and static protection; costs about 0.1 dB |
+  | GAIN and AR straps | two 3-pin 0.1" headers with jumper shunts (or wire links) | **GAIN:** shunt to VCC = 40 dB, to GND = 50 dB, no shunt = 60 dB. **AR:** shunt to VCC = 1:2000, to GND = 1:500, no shunt = 1:4000. Lets stage 7 test 4 change settings without rewiring. |
+  | optional link | a wire link in series with OUT | leave room to cut it and fit a film capacitor later, if a hardware high-pass is ever wanted |
+
+  The **filtered node** is the module's VCC pin. Connect **GAIN to that same node** (40 dB), and leave AR open. The
+  module's GND pin is the ground node: cord wires 2, 4, 5 and 8 all end there, and C1 and C2 return there.
+- **Build sheet for the module (assumed to be an exact clone of the Adafruit board; header order GND, VDD, GAIN, OUT, A/R:
+  follow the silkscreen names if they differ).**
+
+  | Module pin | Connect to |
+  |---|---|
+  | 1 GND | cord wires **2, 4, 5 and 8**; the minus leg of C1; one leg of C2; the ground end of both jumper headers |
+  | 2 VDD | **R1 (22 Ω)** whose other end goes to cord wire **1**; the plus leg of C1; the other leg of C2; the VDD end of both jumper headers |
+  | 3 GAIN | the **middle pin** of the GAIN header |
+  | 4 OUT | **R2 (220 Ω)** (and the cuttable link) to cord wire **3** |
+  | 5 A/R | the **middle pin** of the AR header |
+
+  **Jumper headers** (3 pins each, one end to VDD, the other end to GND, the middle pin to the module pin):
+  GAIN header: shunt VDD-middle = 40 dB, middle-GND = 50 dB, no shunt = 60 dB. AR header: shunt VDD-middle = 1:2000,
+  middle-GND = 1:500, no shunt = 1:4000. **Start with GAIN at 40 dB and AR open.**
+
+  **Assembly.** Pins 1 (GND) and 2 (VDD) are adjacent, so C1 and C2 straddle them directly on the header pins, with the C1
+  plus leg on pin 2. Solder R1 between pin 2 and cord wire 1, and R2 in series with pin 4 and cord wire 3. Keep every lead
+  short. Write down which cord colour is which wire number.
+
+  **Checks, unpowered (meter):** no short between pins 1 and 2 (the reading rises as the capacitors charge); about 2 µF between
+  VDD and GND before C1 and C2 are fitted (the module's own capacitor); GAIN and A/R open to both.
+  **Checks, powered from the 3V3 header:** the VDD pin about 3.2 V; the GAIN pin equal to the VDD pin with the shunt on;
+  OUT about 1.25 V DC. If VDD is below about 3.0 V, replace R1 by a wire link or a smaller resistor.
+- **Wiring diagram** (module end, the 8-wire cord, and the Audio Kit board end; the numbers on the cord are the wire
+  numbers used above; the earpiece pad resistors are the 820 Ω parts at J3):
+
+  ```mermaid
+  flowchart LR
+    subgraph HANDSET["Handset end"]
+      subgraph MOD["MAX9814 module header"]
+        P1["pin 1 GND"]
+        P2["pin 2 VDD"]
+        P3["pin 3 GAIN"]
+        P4["pin 4 OUT"]
+        P5["pin 5 A/R"]
+      end
+      R1["R1 22 ohm"]
+      C1["C1 100 uF, plus leg to VDD"]
+      C2["C2 100 nF"]
+      R2["R2 220 ohm and link"]
+      GH["GAIN header: shunt VDD-middle = 40 dB, middle-GND = 50 dB, none = 60 dB"]
+      AH["A/R header: shunt VDD-middle = 1:2000, middle-GND = 1:500, none = 1:4000"]
+      EAR["Earpiece 4 ohm"]
+    end
+
+    subgraph CORD["8-wire cord, straight and untwisted"]
+      W1["wire 1"]
+      W2["wire 2"]
+      W3["wire 3"]
+      W4["wire 4"]
+      W5["wire 5"]
+      W6["wire 6"]
+      W7["wire 7"]
+      W8["wire 8"]
+    end
+
+    subgraph BASE["Audio Kit board end"]
+      V3["3V3 header pin"]
+      GH2["GND header pin"]
+      TIP["Line-in jack tip, left"]
+      SLV["Line-in jack sleeve, AGND"]
+      RP["820 ohm"]
+      RN["820 ohm"]
+      LOP["J3 speaker output +"]
+      LON["J3 speaker output -"]
+    end
+
+    V3 --- W1 --- R1 --- P2
+    P2 --- C1 --- P1
+    P2 --- C2 --- P1
+    P2 -.- GH
+    P3 --- GH
+    P5 --- AH
+    P4 --- R2 --- W3 --- TIP
+    P1 --- W2 --- GH2
+    P1 --- W8 --- GH2
+    P1 --- W4 --- SLV
+    P1 --- W5 --- SLV
+    EAR --- W6 --- RP --- LOP
+    EAR --- W7 --- RN --- LON
+  ```
+
+  Power ground (wires 2 and 8) and signal ground (wires 4 and 5) meet only at module pin 1. The GAIN and A/R headers each
+  have VDD at one end, GND at the other and the module pin in the middle (the dotted line marks the VDD end).
 - No carbon-mic-style DC bias/current-loop circuitry needed — this is a standard
   self-contained electret amp module, natively compatible with simple 3.3-5V supply.
 
@@ -283,8 +416,8 @@ Rules:
   `9` on the dial), **neither is zero or full-scale**, and the steps are **even in dB**.
 - 10 levels, 11 equal intervals: digit `d` maps to step `k = d` (with `0` → `k = 10`) and
   `gain_dB = min_dB + (k / 11) × (max_dB − min_dB)`.
-- **Starting range is wide, to be narrowed during testing.** Initial values use the existing
-  `gain.h` limits:
+- **Range: keep the existing `gain.h` limits** (stage 6, 2026-09-20: the volume steps work well on the earpiece with
+  the 820 Ω pads; no narrowing needed for now):
 
 | | Range | Step | Level `1` | Level `0` |
 |---|---|---|---|---|
@@ -404,15 +537,15 @@ tune on the bench.
 **Decided:** voice prompts are stored on the **microSD card**, so there can be many more of them and at
 higher quality than would fit in flash. The full list to record, with status, is `doc/audio_clips.md`.
 
-- **Format:** 16-bit mono WAV files, one per clip ID. The sample rate is **not yet decided**; the board's
-  codec supports up to 48 kHz and the firmware's call audio path runs at 8 kHz (16 kHz for wide-band), so
-  prompts may play at a higher rate by re-clocking I2S while the phone is idle. Stage 8 of
-  `validate_board_plan.md` tests 16, 22.05 and 44.1 kHz.
+- **Format:** 16-bit mono WAV, **all clips in one large WAV (a "bank") plus an index of clip boundaries** (clip ID,
+  start sample, length), with per-clip files as the fallback (`doc/audio_clips.md`). **Two banks, 8 kHz and 16 kHz, are
+  in the design**: active notifications such as "battery low" can play during a call, so the firmware picks the bank
+  that matches the codec's current I2S rate (8 kHz for a CVSD call, 16 kHz for mSBC or when idle) and never re-clocks
+  the codec mid-clip. Stage 6 found no audible quality difference between 16, 22.05 and 44.1 kHz on the earpiece, so
+  nothing above 16 kHz is stored.
 - **SD wiring cost:** 1-bit SD mode uses **IO14 (CLK), IO15 (CMD) and IO2 (DATA0)**; 4-bit mode also uses IO4,
-  IO12 and IO13. This **conflicts with the earlier GPIO proposal** (which put the hook and dial inputs on
-  IO13, IO14 and IO15). Only about four clean GPIOs remain with the SD card (IO13, IO22, IO19, and IO21
-  after removing R46), so a fifth GPIO, or dropping the dial-in-progress input, has to be decided (stage 4
-  of the validation plan).
+  IO12 and IO13, which the GPIO budget cannot spare. Stage 4 found enough clean GPIOs for everything else (see
+  the pin decision above), so 1-bit mode it is. DIP: SW3 ON and SW4 ON.
 - **Risks to test:** some boards will not boot with a card inserted; the card slot lines are strapping-pin
   sensitive; a missing or failed card should not leave the phone silent (**Proposed:** keep a very small set
   of built-in fallback prompts, or fall back to tones). **Never format the card automatically** (the
@@ -447,7 +580,15 @@ GUI notifications and gain plumbing removed.
 **Change:**
 - **Pins** (see Hardware platform), and confirm the codec chip.
 - **`audio_task`:** remove the `rx * -1` AG1171 inversion; select `LINE2` for both input and output in the
-  codec config (line-in = LIN2/RIN2, headphone = LOUT2/ROUT2); replace `gui_set_fatal_error` with a log.
+  codec config for input (line-in = LIN2/RIN2); the output is LOUT1/ROUT1 (the speaker outputs to the earpiece,
+  DAC power 0x30, with IO21 driven high to enable the amps); replace `gui_set_fatal_error` with a log.
+  **Fix `es8388.c`'s output enables:** its `DAC_OUTPUT_*` constants do not match the DAC power register (0x04: bit 5
+  LOUT1, 4 ROUT1, 3 LOUT2, 2 ROUT2). `LOUT2|ROUT2` must be 0x0c, not 0x28, or only the left channel plays (confirmed in
+  stage 6); `LOUT1|ROUT1` must be 0x30.
+  **Input path:** select `LINE2` (LIN2/RIN2, the line-in jack). The onboard microphones share those inputs, so they are
+  removed in hardware (remove the microphone parts themselves; C18 and C20 are too small to handle). Use the left channel only: power down the right input and ADC (ADC power 0x03 =
+  0x59) and send the left ADC to both slots (register 0x0c = 0x4c). The driver's PGA is +9 dB (0x09 = 0x33); use 0 dB
+  and let the MAX9814 gain do the work. The firmware already reads only the left slot.
   **Proposed:** drop the line echo canceller (it existed for the SLIC hybrid). If dropped, also
   remove `esp_hf_client_send_nrec()` in `_btSetState`, which tells the cellphone to disable its own
   echo cancellation.
@@ -455,7 +596,9 @@ GUI notifications and gain plumbing removed.
   dial-in-progress). This removes the `ON_HOOK_PROVISIONAL` state and its 500 ms wait, which existed
   only to tell pulses from a hangup. Replace `_potsLineReverse` / `_potsLineRingMode` with the
   DRV8825 STEP/ENABLE/DIR control. The dial-in-progress contact also gives a clean end-of-digit
-  signal instead of the 100 ms make timeout.
+  signal instead of the 100 ms make timeout. **The hook input is active-high:** the contact goes between 3V3
+  and IO13 (MTCK), and the board's R15 (10 kΩ, measured) is the pull-down, so the firmware polarity for the
+  hook is inverted relative to the dial inputs (which use pull-ups). R15 stays fitted.
 - **`app_task`:** add the mode step in the dialing state, the 10-digit rule, and the mode states.
   Note an existing upstream bug at `app_task.c:569` (`} if (!bt_in_call)` where an `else` was
   probably meant); it only matters for the GUI dial button, so it goes away with the removal.
@@ -517,7 +660,7 @@ driver.
   driven from the codec's output, or needs replacement.
 - Audit `app_task`'s on-hook handling to confirm it correctly unwinds any in-progress mode (passkey
   entry, forget-pairing confirmation), not just call states.
-- Volume ranges: tune the wide starting ranges on the bench (sec. "Volume model").
+- Volume ranges: kept at the `gain.h` limits after stage 6; revisit only if real prompts or calls sound wrong.
 - Tune the era timeouts (about 50 s off-hook and about 16 s partial-dial for the US Precise era).
 - Whether to keep a "dial `0` for voice assistant" behavior, and if so on which digit.
 - UK era: confirm its ringback tone (currently a flagged placeholder) and its off-hook and
