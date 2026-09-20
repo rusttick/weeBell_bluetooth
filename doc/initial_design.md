@@ -199,67 +199,51 @@ the final build target (those remain as spares/dev boards for other experiments)
   VDD and GND before C1 and C2 are fitted (the module's own capacitor); GAIN and A/R open to both.
   **Checks, powered from the 3V3 header:** the VDD pin about 3.2 V; the GAIN pin equal to the VDD pin with the shunt on;
   OUT about 1.25 V DC. If VDD is below about 3.0 V, replace R1 by a wire link or a smaller resistor.
-- **Wiring diagram** (module end, the 8-wire cord, and the Audio Kit board end; the numbers on the cord are the wire
-  numbers used above; the earpiece pad resistors are the 820 Ω parts at J3):
+- **Wiring diagram** (each line between boxes is a wire or a component lead; the cord's wire numbers are in the build sheet):
 
   ```mermaid
   flowchart LR
-    subgraph HANDSET["Handset end"]
-      subgraph MOD["MAX9814 module header"]
-        P1["pin 1 GND"]
-        P2["pin 2 VDD"]
-        P3["pin 3 GAIN"]
-        P4["pin 4 OUT"]
-        P5["pin 5 A/R"]
-      end
+    subgraph HANDSET["Handset"]
+      GND["GND"]
+      VDD["VDD"]
+      GAIN["GAIN"]
+      OUT["OUT"]
+      AR["A/R"]
       R1["R1 22 ohm"]
-      C1["C1 100 uF, plus leg to VDD"]
+      C1["C1 100 uF"]
       C2["C2 100 nF"]
-      R2["R2 220 ohm and link"]
-      GH["GAIN header: shunt VDD-middle = 40 dB, middle-GND = 50 dB, none = 60 dB"]
-      AH["A/R header: shunt VDD-middle = 1:2000, middle-GND = 1:500, none = 1:4000"]
-      EAR["Earpiece 4 ohm"]
+      R2["R2 220 ohm"]
+      GJ["GAIN jumper"]
+      AJ["A/R jumper"]
+      EAR["Earpiece"]
     end
 
-    subgraph CORD["8-wire cord, straight and untwisted"]
-      W1["wire 1"]
-      W2["wire 2"]
-      W3["wire 3"]
-      W4["wire 4"]
-      W5["wire 5"]
-      W6["wire 6"]
-      W7["wire 7"]
-      W8["wire 8"]
-    end
-
-    subgraph BASE["Audio Kit board end"]
-      V3["3V3 header pin"]
-      GH2["GND header pin"]
-      TIP["Line-in jack tip, left"]
-      SLV["Line-in jack sleeve, AGND"]
+    subgraph BOARD["Audio Kit board"]
+      V3["3V3"]
+      G["GND"]
+      TIP["Line-in tip"]
+      SLV["Line-in sleeve"]
       RP["820 ohm"]
       RN["820 ohm"]
-      LOP["J3 speaker output +"]
-      LON["J3 speaker output -"]
+      JP["J3 +"]
+      JN["J3 -"]
     end
 
-    V3 --- W1 --- R1 --- P2
-    P2 --- C1 --- P1
-    P2 --- C2 --- P1
-    P2 -.- GH
-    P3 --- GH
-    P5 --- AH
-    P4 --- R2 --- W3 --- TIP
-    P1 --- W2 --- GH2
-    P1 --- W8 --- GH2
-    P1 --- W4 --- SLV
-    P1 --- W5 --- SLV
-    EAR --- W6 --- RP --- LOP
-    EAR --- W7 --- RN --- LON
+    V3 --- R1 --- VDD
+    VDD --- C1 --- GND
+    VDD --- C2 --- GND
+    GAIN --- GJ
+    VDD --- GJ
+    GND --- GJ
+    AR --- AJ
+    VDD --- AJ
+    GND --- AJ
+    OUT --- R2 --- TIP
+    GND --- G
+    GND --- SLV
+    EAR --- RP --- JP
+    EAR --- RN --- JN
   ```
-
-  Power ground (wires 2 and 8) and signal ground (wires 4 and 5) meet only at module pin 1. The GAIN and A/R headers each
-  have VDD at one end, GND at the other and the module pin in the middle (the dotted line marks the VDD end).
 - No carbon-mic-style DC bias/current-loop circuitry needed — this is a standard
   self-contained electret amp module, natively compatible with simple 3.3-5V supply.
 
