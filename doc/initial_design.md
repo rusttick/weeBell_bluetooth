@@ -204,17 +204,25 @@ the final build target (those remain as spares/dev boards for other experiments)
   ```mermaid
   flowchart LR
     subgraph HANDSET["Handset"]
-      GND["GND"]
-      VDD["VDD"]
-      GAIN["GAIN"]
+      GND["node 2: GND pin"]
+      VDD["node 1: VDD pin"]
+      GAIN["GAIN pin"]
+      AR["A/R pin"]
       OUT["OUT"]
-      AR["A/R"]
       R1["R1 22 ohm"]
       C1["C1 100 uF"]
       C2["C2 100 nF"]
       R2["R2 220 ohm"]
-      GJ["GAIN jumper"]
-      AJ["A/R jumper"]
+      subgraph GH["GAIN header"]
+        G1["1"]
+        G2["2"]
+        G3["3"]
+      end
+      subgraph AH["A/R header"]
+        A1["1"]
+        A2["2"]
+        A3["3"]
+      end
     end
 
     subgraph BOARD["Audio Kit board"]
@@ -227,16 +235,22 @@ the final build target (those remain as spares/dev boards for other experiments)
     V3 --- R1 --- VDD
     VDD --- C1 --- GND
     VDD --- C2 --- GND
-    GAIN --- GJ
-    VDD --- GJ
-    GND --- GJ
-    AR --- AJ
-    VDD --- AJ
-    GND --- AJ
+    VDD --- G1
+    GAIN --- G2
+    GND --- G3
+    G1 ===|shunt| G2
+    VDD --- A1
+    AR --- A2
+    GND --- A3
     OUT --- R2 --- TIP
     GND --- G
     GND --- SLV
   ```
+
+  Node 1 (the module's VDD pin) and node 2 (its GND pin) are where three or more parts and wires join. Header pin 1 is at
+  node 1 and pin 3 at node 2 on both headers. The thick line is the jumper shunt on the GAIN header (pins 1-2 =
+  40 dB, as first built); the A/R header has no shunt (1:4000). Stage 7 moves the GAIN shunt to pins 2-3 (50 dB) or removes it
+  (60 dB), and puts a shunt on the A/R header (1-2 = 1:2000, 2-3 = 1:500).
 - No carbon-mic-style DC bias/current-loop circuitry needed — this is a standard
   self-contained electret amp module, natively compatible with simple 3.3-5V supply.
 
