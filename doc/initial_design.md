@@ -199,7 +199,7 @@ the final build target (those remain as spares/dev boards for other experiments)
   VDD and GND before C1 and C2 are fitted (the module's own capacitor); GAIN and A/R open to both.
   **Checks, powered from the 3V3 header:** the VDD pin about 3.2 V; the GAIN pin equal to the VDD pin with the shunt on;
   OUT about 1.25 V DC. If VDD is below about 3.0 V, replace R1 by a wire link or a smaller resistor.
-- **Wiring diagram** (each line between boxes is a wire or a component lead; the cord's wire numbers are in the build sheet):
+- **Microphone wiring diagram** (each line between boxes is a wire or a component lead; the cord's wire numbers are in the build sheet):
 
   ```mermaid
   flowchart LR
@@ -215,7 +215,6 @@ the final build target (those remain as spares/dev boards for other experiments)
       R2["R2 220 ohm"]
       GJ["GAIN jumper"]
       AJ["A/R jumper"]
-      EAR["Earpiece"]
     end
 
     subgraph BOARD["Audio Kit board"]
@@ -223,10 +222,6 @@ the final build target (those remain as spares/dev boards for other experiments)
       G["GND"]
       TIP["Line-in tip"]
       SLV["Line-in sleeve"]
-      RP["820 ohm"]
-      RN["820 ohm"]
-      JP["J3 +"]
-      JN["J3 -"]
     end
 
     V3 --- R1 --- VDD
@@ -241,8 +236,6 @@ the final build target (those remain as spares/dev boards for other experiments)
     OUT --- R2 --- TIP
     GND --- G
     GND --- SLV
-    EAR --- RP --- JP
-    EAR --- RN --- JN
   ```
 - No carbon-mic-style DC bias/current-loop circuitry needed — this is a standard
   self-contained electret amp module, natively compatible with simple 3.3-5V supply.
