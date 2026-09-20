@@ -203,31 +203,35 @@ the final build target (those remain as spares/dev boards for other experiments)
 
   ```mermaid
   flowchart LR
-    subgraph HANDSET["Handset"]
-      VDD["VDD pin"]
-      GND["GND pin"]
-      GAIN["GAIN pin"]
-      OUT["OUT pin"]
-      R1["R1 22 ohm"]
-      C1["C1 100 uF"]
-      C2["C2 100 nF"]
-      R2["R2 220 ohm"]
-    end
+    max_vdd["max_vdd"]
+    max_gnd["max_gnd"]
+    max_gain["max_gain"]
+    max_out["max_out"]
 
-    subgraph BOARD["Audio Kit board"]
-      V3["3V3"]
-      G["GND"]
-      TIP["Line-in tip"]
-      SLV["Line-in sleeve"]
-    end
+    r1["r1"]
+    r2["r2"]
+    c1["c1"]
+    c2["c2"]
 
-    V3 --- R1 --- VDD
-    VDD --- C1 --- GND
-    VDD --- C2 --- GND
-    GAIN ===|shunt| VDD
-    OUT --- R2 --- TIP
-    GND --- G
-    GND --- SLV
+    kit_3v3["kit_3v3"]
+    kit_gnd["kit_gnd"]
+    kit_tip["kit_tip"]
+    kit_sleeve["kit_sleeve"]
+
+    max_vdd --- max_gain
+    max_vdd --- r1
+    max_vdd --- c1
+    max_vdd --- c2
+
+    max_gnd --- c1
+    max_gnd --- c2
+    max_gnd --- kit_gnd
+    max_gnd --- kit_sleeve
+
+    max_out --- r2
+
+    r1 --- kit_3v3
+    r2 --- kit_tip
   ```
 
   The thick line is the jumper shunt on the GAIN header (pin 1 at the VDD pin, pin 2 to the GAIN pin, pin 3 at the GND pin):
