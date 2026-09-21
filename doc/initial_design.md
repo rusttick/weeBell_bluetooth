@@ -93,7 +93,11 @@ the final build target (those remain as spares/dev boards for other experiments)
   far too high when driven directly. **Fitted: a series resistor of 820 Ω in each speaker leg** (a pad, about -52 dB),
   with the codec near full scale. No audible noise; still slightly loud. The firmware must use the codec's full range
   (never quiet audio in the digital domain with the analog gain turned up). Tone shaping (a high-pass near 300 Hz, a
-  treble cut) is done later in software (`eq`) once real Bluetooth audio is playing.
+  treble cut) is done in software (the equalizer profiles, `eqp spk`) once real Bluetooth audio is playing.
+  **Changed (stage 9, 2026-09-20): 160 Ω in each speaker leg** (about −38 dB, roughly 14 dB louder than 820 Ω). Phone-call
+  speech averages about −16 dBFS, some 14 dB below the full-scale test tone the 820 Ω pad was sized with, so calls were quiet.
+  The 160 Ω pad was fitted after trying the earpiece profiles with `eqp`; the hiss floor rises with the level, so listen for it
+  with the call idle.
 - **Pins change.** The firmware's current pin assignments are for the gCore board
   (I2C 21/22, I2S 25/19/26/34, ring 32/33, hook 35). The newest ES8388 A1S module puts the codec on
   I2C SDA 18 / SCL 23 and I2S BCLK 5 / WS 25 / DOUT 26 / DIN 35 / MCLK 0; older modules use I2C 33/32 and
@@ -125,7 +129,7 @@ the final build target (those remain as spares/dev boards for other experiments)
 
 The handset microphone is a **MAX9814 electret microphone + AGC breakout** (5 pins: GND, VDD, GAIN, OUT, A/R). It
 sits **inside the handset, next to the mouthpiece**, and reaches the base through an 8-wire cord. Its output goes into
-the Audio Kit's **line-in jack, left channel only**. It is a self-contained electret amplifier that runs from 3.3 V, so
+the Audio Kit's **line-in jack, one channel only (the right one, on this board)**. It is a self-contained electret amplifier that runs from 3.3 V, so
 no carbon-mic-style DC bias or current-loop circuitry is needed.
 
 ### Decisions
@@ -133,11 +137,20 @@ no carbon-mic-style DC bias or current-loop circuitry is needed.
 - **Module in the handset, not on the base PCB.** Only the already-amplified, low-impedance, AGC'd signal travels the
   long (6–8 ft) coiled cord, which is far more noise-resistant than running a raw high-impedance capsule signal that
   distance.
-- **Line-in, not mic-in**, and **left channel only** (the plug tip). Codec setup is in "Firmware changes".
-- **GAIN is strapped at the module**, so it never travels down the cord. First build: **GAIN = 40 dB, A/R open
-  (1:4000)**. Stage 7 (test 4) chooses the final settings.
-- **No software filtering** on the microphone path. **No hardware high-pass** unless hum or rumble turns out to be a
-  problem (R2 is placed so a film capacitor can be added in series with it).
+- **Line-in, not mic-in**, and **one channel only: the right (RIN2)**. Measured in stage 7 (2026-09-20): the signal on
+  the plug tip arrives on the codec's *right* input, not the left the schematic suggests. The firmware therefore uses
+  the right ADC. Codec setup is in "Firmware changes".
+- **GAIN is strapped at the module**, so it never travels down the cord. **Decided (stage 7, 2026-09-20): GAIN = 40 dB
+  (the lowest setting), A/R open (1:4000).** Speech at 5 cm already peaks at about −6 dBFS at 40 dB, so 50 and 60 dB would
+  clip. If the microphone turns out too hot in the handset, attenuate it **physically** (open-cell foam or cloth over the
+  capsule opening); no further electronic tuning is planned.
+- **No software filtering** on the microphone path (the MCU is kept free for the other features). **Decided (stage 9, 2026-09-20):
+  if the microphone sounds boomy or muffled, add a passive first-order high-pass:** a film or C0G capacitor of 0.047 to
+  0.1 µF (corner about 330 to 155 Hz into the codec's roughly 10 kΩ input) in series with the signal, after `r2`, inside
+  the handset. The value is chosen by listening in the final enclosure (the microphone profiles in `hwtest`, `eqp mic <n>`, audition high-pass corners and more;
+  the software filter is second-order, so expect a slightly higher corner to match). A parallel resistor across the
+  capacitor would make it a gentle shelf if the result is still dull. The microphone level is set by the digital gain
+  (−12 dB, about volume digit 6): at 0 dB the far end heard clipping with the mouth 2 cm away.
 - **The onboard microphones are removed** from the Audio Kit (see "The codec side").
 - **Built without a PCB:** the component leads and cord wires are twisted together at each MAX9814 pin and soldered.
 
@@ -152,7 +165,7 @@ equivalent to every other and it does not matter which is which. Use them as:
 - 1 wire for the mic signal.
 - 2 wires in parallel for the power ground (the supply return).
 - 2 wires in parallel for the signal ground.
-- 2 wires for the earpiece (through the 820 Ω pad at the amplifier end; not part of the microphone diagram).
+- 2 wires for the earpiece (through the 160 Ω pad in each leg at the amplifier end; not part of the microphone diagram).
 
 Supply current returns on the power ground and the signal returns on the signal ground. The two grounds are joined
 **only at the MAX9814's GND pin**, so supply current never flows in the signal return. Keep the microphone module away
@@ -167,7 +180,8 @@ one component lead. At a node, twist all the leads on its lines together and sol
 
 - `kit_3v3`: a 3V3 header pin (P3 or P4).
 - `kit_gnd`: a GND header pin.
-- `kit_tip`: the tip of a 3.5 mm plug for the line-in jack J1 (LINEINL, which reaches codec LIN2).
+- `kit_tip`: the tip of a 3.5 mm plug for the line-in jack J1. On this board it reaches the codec's **right** input
+  (RIN2), measured in stage 7.
 - `kit_sleeve`: the sleeve of that plug.
 
 **MAX9814 module pins** (A/R is left open):
@@ -186,8 +200,8 @@ regulator), and `r2` has no equivalent on the module.
 - `c2`: **100 nF** ceramic (X7R), with short leads.
 - **GAIN strap** (the `max_gain` to `max_vdd` line): a removable link, not a component. To `max_vdd` = **40 dB**, to
   `max_gnd` = **50 dB**, removed = **60 dB**. Power the module off and on after moving it.
-- **A/R** (not drawn): left open = 1:4000. To test other settings in stage 7, link `max_ar` to `max_vdd` (1:2000) or to
-  `max_gnd` (1:500).
+- **A/R** (not drawn): left open = 1:4000, and no other setting is planned. (Linking `max_ar` to `max_vdd` gives 1:2000
+  and to `max_gnd` gives 1:500, if it is ever wanted.)
 
 ### What is already on the module
 
@@ -253,11 +267,12 @@ flowchart LR
 
 Firmware details are under "Firmware changes"; the microphone-related points are:
 
-- The jack tip is LINEINL, which reaches codec LIN2 through C11 (the ring is RIN2 through C13). Confirm which plug
-  contact reaches C11 and C13 with a continuity check.
-- Firmware selects `LINE2`, powers down the right input and ADC and sends the left ADC to both I2S slots, so the
-  ring is not used. The codec's input amplifier is set to 0 dB (the driver's default is +9 dB); the MAX9814's gain does
-  the work.
+- On this board the plug tip reaches codec **RIN2** (through C13), not LIN2 (C11) as the schematic suggested (stage 7:
+  a signal on the tip appeared only on the right channel). A continuity check from the plug tip to C13's jack-side pad
+  would confirm it.
+- Firmware selects `LINE2`, powers down the left input and ADC (register 0x03 = 0xA9) and sends the right ADC to both I2S
+  slots (register 0x0c = 0x8c), so the jack's other contact is not used. The codec's input amplifier is set to 0 dB (the
+  driver's default is +9 dB); the MAX9814's gain does the work.
 - **Remove the onboard microphones** (test 2 in stage 7 of `doc/validate_board_plan.md`). C18 and C20 are too small
   to handle by hand; removing them is only the fallback if a microphone is still heard.
 
@@ -386,7 +401,9 @@ After the handset goes off-hook, the **first digit dialed selects a mode**. **De
 | `4` | Microphone volume | one digit sets it, then the number is spoken |
 | `5` | Tone era | one digit selects an era profile (`tones.md`) |
 | `6` | Forget pairing | dial `6` again to confirm; the phone then says it is unpaired |
-| `0`, `7`, `8`, `9` | Unassigned | **Proposed:** an error indication (tone or clip) if dialed at the mode step |
+| `7` | Microphone equalizer | **Proposed:** one digit selects a profile (`0` = off), then the number is spoken; see "Equalizer profiles" |
+| `8` | Earpiece equalizer | **Proposed:** one digit selects a profile (`0` = off), then the number is spoken |
+| `0`, `9` | Unassigned | **Proposed:** an error indication (tone or clip) if dialed at the mode step |
 
 Rules:
 - **Once a mode is selected, digits 0-9 are all ordinary numeric input for that
@@ -449,7 +466,66 @@ Rules:
   tone used for a failed call (see "Behavior by era").
 - The choice persists across power cycles.
 
+### Equalizer profiles — Proposed (mode 7 microphone, mode 8 earpiece)
+
+Each direction has ten profiles; the digit dialed selects one and `0` is flat (bypassed). A profile is up to three
+second-order filter sections (high-pass, low-pass, peaking, low or high shelf) and a pre-gain that gives back the headroom
+a boost uses. They are **starting points to judge by ear and by recordings**, not final values, and are built and tested in
+`hwtest` (`eqp`, `sweep`, `noise`, `rec`, `hwtest/main/eq.c`). The chosen numbers go into the firmware, and the two chosen
+digits persist like the volume digits.
+
+**Where they act.** The microphone profile filters the codec's input before anything uses it (calls, recordings); the
+earpiece profile filters the audio just before the codec. The tone generators and clips go through the earpiece profile too.
+
+**Cost.** Biquads are cheap: high-pass plus shelf measured **96 cycles per sample, 0.64% of one core** at 16 kHz with the
+product's compiler and 240 MHz settings; a three-section profile is about 1%. `eqp bench` times every profile.
+
+**Microphone profiles**, for what a plastic handset housing does to a capsule behind a few small holes: the highs fall away
+above about 3 kHz, the cup and holes resonate between 1.5 and 3 kHz (honky), close talking and a sealed cavity boost the bass, and
+handling adds rumble. The passive high-pass planned in "Microphone" may already be fitted, so these high-pass corners are modest.
+
+| Digit | Name | Aim |
+|---|---|---|
+| 0 | flat | none |
+| 1 | light lift | mild loss: 120 Hz high-pass, +3 dB above 3 kHz |
+| 2 | housing loss | typical loss: 150 Hz high-pass, +6 dB above 2.8 kHz |
+| 3 | housing loss strong | thick wall or foam: 180 Hz high-pass, +9 dB above 2.5 kHz, +2 dB at 3.6 kHz |
+| 4 | tame cavity | honky resonance: −6 dB at 2 kHz (narrow), +3 dB above 3.5 kHz |
+| 5 | reduce boom | 250 Hz high-pass, −4 dB below 400 Hz |
+| 6 | telephone band | 300 Hz to 3.4 kHz only |
+| 7 | presence | 180 Hz high-pass, +5 dB at 3 kHz |
+| 8 | muffled and boomy | −5 dB below 300 Hz, +7 dB above 2.5 kHz |
+| 9 | clarity | 200 Hz high-pass, +3 dB at 1.5 kHz, +4 dB above 3 kHz |
+
+**Earpiece profiles**, for a small 4 Ω receiver: little output below 300 Hz (worse if it does not seal to the ear), a harsh peak
+between 2 and 3 kHz, a fall-off above about 4 kHz, and a fixed hiss that a high boost would raise.
+
+| Digit | Name | Aim |
+|---|---|---|
+| 0 | flat | none |
+| 1 | telephone | 300 Hz to 3.4 kHz only; also hides the amplifier hiss |
+| 2 | tame harsh | −4 dB at 2.5 kHz, −3 dB above 4.5 kHz |
+| 3 | bass lift | receiver not sealed to the ear: +6 dB below 350 Hz |
+| 4 | clarity | 250 Hz high-pass, +3 dB at 2.8 kHz |
+| 5 | warm | +3 dB below 500 Hz, −5 dB above 3 kHz |
+| 6 | intelligibility | for hard of hearing: 300 Hz high-pass, +4 dB at 2 kHz, +2 dB above 4 kHz |
+| 7 | low hiss | 4 kHz low-pass, −6 dB above 3 kHz |
+| 8 | loud | 350 Hz high-pass, +3 dB at 1.2 kHz |
+| 9 | soft wideband | +3 dB below 300 Hz, −4 dB above 5 kHz |
+
+This reverses the earlier "no software filtering on the microphone path" for the case where the housing needs it; a passive
+high-pass (see "Microphone") can still do part of the job. The persistent settings gain two digits (below), and
+`audio_clips.md` gains two label clips.
+
 ### Bluetooth pairing via the dial itself
+
+**Stage 9 finding (2026-09-20): passkey entry does not work with an iPhone; use Just Works.** With KeyboardOnly the
+iPhone never displayed a passkey, and pairing failed after about 30 s. With NoInputNoOutput (Just Works) it paired at once
+and connected HFP. Apple's guidelines (section 2.1.5) only name Numerical Comparison. **Proposed change:** dial mode 2 opens
+a timed discoverable window (about 3 minutes; a phone can take a long time to find it) with IO capability NoInputNoOutput,
+and the user pairs from the phone (tap Pair, possibly choosing a device type). No digits are collected, so the
+"collecting passkey" state, the `ESP_BT_GAP_KEY_REQ_EVT` move out of the debug block and `ESP_BT_IO_CAP_IN` below are not
+needed. Anyone in range during the window can pair, as with any headset. The text below describes the original plan.
 
 Standard headset pairing uses one of a few Bluetooth Secure Simple Pairing (SSP)
 association models depending on each device's declared I/O capability:
@@ -465,6 +541,9 @@ Per the ESP-IDF header (`esp_gap_bt_api.h`), the SSP passkey is always exactly a
 rotary dial already produces, no new decoding logic needed.
 
 Implementation sketch in `bt_task.c`:
+0. **Turn SSP on:** the main firmware's `sdkconfig` has `CONFIG_BT_SSP_ENABLED` **off** (found in stage 9), so all the
+   `#if (CONFIG_BT_SSP_ENABLED == true)` code below is compiled out today and the phone pairs with a legacy PIN. Set it to
+   `y` (`hwtest` already does).
 1. Change `iocap` (currently `ESP_BT_IO_CAP_IO` at `bt_task.c:794`) to
    `ESP_BT_IO_CAP_IN`.
 2. On `ESP_BT_GAP_KEY_REQ_EVT`, enter a "collecting passkey" state and route the next 6
@@ -501,6 +580,8 @@ holding just:
 - earpiece volume digit
 - microphone volume digit
 - tone era
+- microphone equalizer digit (0 = off)
+- earpiece equalizer digit (0 = off)
 
 Pairing state is best taken from the Bluetooth bond list itself, with a single-bond rule, instead
 of a separate stored copy. That removes the case where the stored copy and the bond list disagree.
@@ -555,6 +636,16 @@ higher quality than would fit in flash. The full list to record, with status, is
 - **SD wiring cost:** 1-bit SD mode uses **IO14 (CLK), IO15 (CMD) and IO2 (DATA0)**; 4-bit mode also uses IO4,
   IO12 and IO13, which the GPIO budget cannot spare. Stage 4 found enough clean GPIOs for everything else (see
   the pin decision above), so 1-bit mode it is. DIP: SW3 ON and SW4 ON.
+- **Interrupt slots (stage 8 finding):** with the SD card mounted, installing the I2S driver with
+  `ESP_INTR_FLAG_LEVEL1` failed (`ESP_ERR_NOT_FOUND`), because the level-1 slots were used up. The main firmware's I2S
+  setup must allow any interrupt level (`intr_alloc_flags = 0`) once the SD card is added.
+- **Card format (stage 8 finding, Proposed):** **FAT32 with an MBR partition map and large clusters** (macOS's `diskutil
+  eraseDisk FAT32 NAME MBRFormat` gives 32 KB clusters on a 64 GB card). Cards over 32 GB arrive as exFAT and will not
+  mount. Seek time in the bank depends on the cluster count: a random seek plus 4 KB read took about 8 ms (95th percentile
+  9.4 ms) with 32 KB clusters, against 15 ms (95th percentile 29 ms) with 2 KB clusters on a small FAT16 card. So the bank
+  option works without fast seek on a large-cluster card. The card runs 1-bit SDMMC at 20 MHz. **Read through POSIX
+  `open()`/`lseek()`/`read()`, not stdio `fopen`/`fread`:** stdio refills a small internal buffer, and measured 570 KB/s
+  and an 8 ms seek plus 4 KB read, against 1900 to 2350 KB/s and 3.2 ms (95th percentile 4.7 ms) with POSIX reads.
 - **Risks to test:** some boards will not boot with a card inserted; the card slot lines are strapping-pin
   sensitive; a missing or failed card should not leave the phone silent (**Proposed:** keep a very small set
   of built-in fallback prompts, or fall back to tones). **Never format the card automatically** (the
@@ -598,9 +689,10 @@ GUI notifications and gain plumbing removed.
   LOUT1, 4 ROUT1, 3 LOUT2, 2 ROUT2). `LOUT2|ROUT2` must be 0x0c, not 0x28, or only the left channel plays (confirmed in
   stage 6); `LOUT1|ROUT1` must be 0x30.
   **Input path:** select `LINE2` (LIN2/RIN2, the line-in jack). The onboard microphones share those inputs, so they are
-  removed in hardware (remove the microphone parts themselves; C18 and C20 are too small to handle). Use the left channel only: power down the right input and ADC (ADC power 0x03 =
-  0x59) and send the left ADC to both slots (register 0x0c = 0x4c). The driver's PGA is +9 dB (0x09 = 0x33); use 0 dB
-  and let the MAX9814 gain do the work. The firmware already reads only the left slot.
+  removed in hardware (remove the microphone parts themselves; C18 and C20 are too small to handle). Use the right channel only (the plug tip arrives on RIN2 on this board, stage 7): power down the left input and
+  ADC (ADC power 0x03 = 0xA9) and send the right ADC to both slots (register 0x0c = 0x8c). The driver's PGA is +9 dB
+  (0x09 = 0x33); use 0 dB and let the MAX9814 gain do the work. The firmware already reads only the left slot, which
+  then carries the right ADC's data.
   **Proposed:** drop the line echo canceller (it existed for the SLIC hybrid). If dropped, also
   remove `esp_hf_client_send_nrec()` in `_btSetState`, which tells the cellphone to disable its own
   echo cancellation.
@@ -674,9 +766,11 @@ Not part of the BOM, kept here so they don't get re-litigated:
 ## Open items
 
 - Confirm ES8388 vs AC101 on the actual ESP32-A1S board received, and the real pin map.
-- Microphone (stage 7): confirm the MAX9814 module matches the Adafruit board (checks above); choose the GAIN (40, 50 or
-  60 dB) and A/R settings; confirm the onboard microphones are gone and the right channel cannot mix in; check the real
-  8-wire cord for noise and record which cord colour is which wire.
+- Microphone (stage 7): done so far: module built and biased correctly, onboard microphones removed (no voice
+  detected), input on the right channel, GAIN 40 dB chosen. Still to do: a clean re-run of the 40 dB signal-to-noise test
+  (the 2026-09-20 run's second silence was not silent), the power-source test (USB vs charger), and the test through the
+  real 8-wire cord. Check the module against the Adafruit board (checks above) if it is ever in doubt. If speech is too
+  loud in the handset, attenuate physically.
 - Bench-test ring driver: actual frequency (mechanical resonance sweep) and actual
   voltage-vs-loudness curve for this specific bell, before finalizing the two-stage
   boost converter's target voltage. Confirm the STEP-to-output-frequency ratio.

@@ -137,7 +137,7 @@ a script that joins them can write the index directly, since it knows each clip'
   400 ms blocks. Record or generate a set of related clips in one take, normalize the take once, then split it into
   clips so their relative loudness is kept.
 - **Batch:** Tools > Macros can apply these steps to many files (Apply to Files). Try it on two or three first.
-- The absolute level is not critical, since the earpiece volume and the 820 Ω pad set the final loudness; **consistency
+- The absolute level is not critical, since the earpiece volume and the earpiece pad resistors (160 Ω per leg now) set the final loudness; **consistency
   between clips is the point**. Judge the final level by ear on the earpiece, with real prompts.
 
 ### Sample analysis: `camilla_montgomery.mp3` (2026-09-20)
@@ -210,6 +210,8 @@ digit.
 | `lbl_earpiece_volume` | "Earpiece volume" | mode 3, before the digit | todo |
 | `lbl_mic_volume` | "Microphone volume" | mode 4, before the digit | todo |
 | `lbl_tone_era` | "Tone era" | mode 5, before the digit | todo |
+| `lbl_mic_eq` | "Microphone equalizer" | mode 7, before the digit (digit zero = off) | todo |
+| `lbl_earpiece_eq` | "Earpiece equalizer" | mode 8, before the digit (digit zero = off) | todo |
 
 Optional, if you want a menu prompt on entering a mode (not decided):
 

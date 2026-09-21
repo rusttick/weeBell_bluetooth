@@ -18,7 +18,9 @@
 #include "driver/gpio.h"
 #include "driver/i2s.h"
 #include "esp_console.h"
+#include "esp_timer.h"
 #include "cmds.h"
+#include "eq.h"
 
 #define I2S_PORT      I2S_NUM_0
 #define MCLK_PIN      GPIO_NUM_0
@@ -148,6 +150,66 @@ static float biquad_db(const biquad_t *q, float f, float fs)
     return 10.0f * log10f((nr * nr + ni * ni) / (dr * dr + di * di));
 }
 
+// ---- Test signal generators: a segmented tone sweep and white noise. They run inside the audio task, so the timing is exact
+// to the sample. Both go through the earpiece equalizer profile (`eqp spk`), so a profile can be recorded and compared.
+typedef enum { GEN_TONE, GEN_SWEEP, GEN_NOISE } gen_mode_t;
+static volatile gen_mode_t gen_mode = GEN_TONE;
+
+static struct {
+    float f0, f1, df, amp;
+    int tone_n, gap_n, ramp_n;      // in samples
+    int idx, pos;
+    float phase;
+    volatile bool finished;
+} sw;
+
+static struct {
+    float amp;                      // peak of the uniform noise; RMS is amp / sqrt(3)
+    int64_t until_us;               // 0 = until stopped
+    volatile bool finished;
+} nz;
+static uint32_t nz_state = 2463534242u;
+
+static float sweep_sample(void)
+{
+    const int seg_n = sw.tone_n + sw.gap_n;
+    const float f = sw.f0 + (float)sw.idx * sw.df;
+    if (f > sw.f1 + 0.5f) {
+        gen_mode = GEN_TONE;
+        tone_hz = 0.0f;
+        sw.finished = true;
+        return 0.0f;
+    }
+    float x = 0.0f;
+    if (sw.pos < sw.tone_n) {
+        float r = 1.0f;                                              // 5 ms raised-cosine ramps: no clicks
+        if (sw.pos < sw.ramp_n) {
+            r = 0.5f * (1.0f - cosf((float)M_PI * (float)sw.pos / (float)sw.ramp_n));
+        } else if (sw.pos >= sw.tone_n - sw.ramp_n) {
+            r = 0.5f * (1.0f - cosf((float)M_PI * (float)(sw.tone_n - sw.pos) / (float)sw.ramp_n));
+        }
+        x = sinf(sw.phase) * sw.amp * r;
+        sw.phase += 2.0f * (float)M_PI * f / (float)sample_rate;
+        if (sw.phase > 2.0f * (float)M_PI) {
+            sw.phase -= 2.0f * (float)M_PI;
+        }
+    }
+    if (++sw.pos >= seg_n) {
+        sw.pos = 0;
+        sw.idx++;
+        sw.phase = 0.0f;
+    }
+    return x;
+}
+
+static float noise_sample(void)
+{
+    nz_state ^= nz_state << 13;                                      // xorshift32: white, flat spectrum
+    nz_state ^= nz_state >> 17;
+    nz_state ^= nz_state << 5;
+    return nz.amp * ((float)(int32_t)nz_state / 2147483648.0f);
+}
+
 static void audio_task(void *arg)
 {
     static int16_t buf[BUF_FRAMES * 2];
@@ -168,9 +230,19 @@ static void audio_task(void *arg)
             }
         }
         bool eq_on = eq_type != EQ_OFF;
+        if (gen_mode == GEN_NOISE && nz.until_us && esp_timer_get_time() > nz.until_us) {
+            gen_mode = GEN_TONE;
+            tone_hz = 0.0f;
+            nz.finished = true;
+        }
         for (int i = 0; i < BUF_FRAMES; i++) {
             float x = 0.0f;
-            if (hz > 0.0f) {
+            const gen_mode_t gm = gen_mode;
+            if (gm == GEN_SWEEP) {
+                x = sweep_sample();
+            } else if (gm == GEN_NOISE) {
+                x = noise_sample();
+            } else if (hz > 0.0f) {
                 x = sinf(phase) * tone_amp;
                 phase += inc;
                 if (phase > 2.0f * (float)M_PI) {
@@ -193,6 +265,15 @@ static void audio_task(void *arg)
             int16_t s = (int16_t)(x * 32767.0f);
             buf[2 * i] = s;
             buf[2 * i + 1] = s;
+        }
+        eq_process_stereo(false, buf, BUF_FRAMES);              // the earpiece equalizer profile (`eqp spk`)
+        if (sw.finished) {
+            sw.finished = false;
+            printf("sweep finished\n");
+        }
+        if (nz.finished) {
+            nz.finished = false;
+            printf("noise finished\n");
         }
         size_t written;
         i2s_write(I2S_PORT, buf, sizeof(buf), &written, portMAX_DELAY);
@@ -229,9 +310,11 @@ static esp_err_t i2s_setup(void)
         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = 4,
-        .dma_buf_len = BUF_FRAMES,
+        // 0 = any interrupt level. Forcing LEVEL1 failed with ESP_ERR_NOT_FOUND once the SD card was mounted: the SDMMC
+        // driver, I2C and the console had used up the level-1 interrupt slots (found in stage 8).
+        .intr_alloc_flags = 0,
+        .dma_buf_count = 6,
+        .dma_buf_len = 64,        // small buffers keep the call-audio delay low (6 x 64 frames = 24 ms at 16 kHz)
         .use_apll = true,
         .tx_desc_auto_clear = true,
         .mclk_multiple = I2S_MCLK_MULTIPLE_256,
@@ -306,7 +389,8 @@ int audio_rate(void)
     return sample_rate;
 }
 
-int audio_read_frames(int16_t *buf, int frames, int timeout_ms)
+// The frames exactly as the codec delivers them (used by `mic level` and `mic avg`, which show both channels).
+int audio_read_frames_raw(int16_t *buf, int frames, int timeout_ms)
 {
     if (!audio_on) {
         return -1;
@@ -318,6 +402,70 @@ int audio_read_frames(int16_t *buf, int frames, int timeout_ms)
     return (int)(got / 4);
 }
 
+// The microphone signal for everything that uses it (`mic snr`, `rec`, the call bridge): the slot that carries the
+// microphone's own ADC is copied to both slots, so it does not matter whether the codec routes that ADC to both slots
+// (register 0x0c) or not. The microphone is on the right input (see mic_source_slot), so its data is the right slot.
+// Then the microphone equalizer profile (`eqp mic`) is applied.
+int audio_read_frames(int16_t *buf, int frames, int timeout_ms)
+{
+    int got = audio_read_frames_raw(buf, frames, timeout_ms);
+    if (got <= 0) {
+        return got;
+    }
+    int slot = mic_source_slot();
+    if (slot >= 0) {
+        for (int i = 0; i < got; i++) {
+            buf[2 * i + (1 - slot)] = buf[2 * i + slot];
+        }
+    }
+    eq_process_stereo(true, buf, got);                          // the microphone equalizer profile (`eqp mic`)
+    return got;
+}
+
+// Let another source (a WAV streamed from the SD card, `sd play`) own the I2S output: stop the tone task, write frames
+// directly, then start the tone task again.
+void audio_source_pause(void)
+{
+    if (audio_on) {
+        stop_task();
+    }
+}
+
+void audio_source_resume(void)
+{
+    if (audio_on) {
+        start_task();
+    }
+}
+
+int audio_write_frames(const int16_t *stereo, int frames)
+{
+    size_t written = 0;
+    if (!audio_on) {
+        return -1;
+    }
+    if (eq_selected(false) == 0) {
+        return i2s_write(I2S_PORT, stereo, (size_t)frames * 4, &written, pdMS_TO_TICKS(2000)) == ESP_OK ? (int)(written / 4) : -1;
+    }
+    // The earpiece equalizer is active: filter a copy (the caller's buffer is const), a few frames at a time.
+    int16_t tmp[128 * 2];
+    int done = 0;
+    while (done < frames) {
+        int n = frames - done > 128 ? 128 : frames - done;
+        memcpy(tmp, stereo + 2 * done, (size_t)n * 4);
+        eq_process_stereo(false, tmp, n);
+        size_t w = 0;
+        if (i2s_write(I2S_PORT, tmp, (size_t)n * 4, &w, pdMS_TO_TICKS(2000)) != ESP_OK) {
+            return -1;
+        }
+        done += (int)(w / 4);
+        if (w < (size_t)n * 4) {
+            break;
+        }
+    }
+    return done;
+}
+
 static int audio_start(int rate)
 {
     if (!codec_ready()) {
@@ -327,6 +475,7 @@ static int audio_start(int rate)
         stop_task();
     }
     sample_rate = rate;
+    eq_set_rate(rate);                                          // the equalizer filters depend on the sample rate
     esp_err_t err = i2s_setup();
     if (err != ESP_OK) {
         printf("I2S setup failed: %s\n", esp_err_to_name(err));
@@ -346,6 +495,12 @@ static int audio_start(int rate)
     printf("audio on: %d Hz, I2S BCLK %d / WS %d / DOUT %d, MCLK on GPIO0, gain %.1f dB, tone %s, output: %s\n", rate,
            pin_bck, pin_ws, pin_dout, gain_db, tone_hz > 0 ? "on" : "off (silence)", out_name());
     return 0;
+}
+
+// Restart the codec and I2S at a new sample rate (used by the Bluetooth call audio, 8 kHz CVSD or 16 kHz mSBC).
+int audio_restart(int rate)
+{
+    return audio_start(rate);
 }
 
 static int audio_stop(void)
@@ -428,6 +583,7 @@ static int cmd_tone(int argc, char **argv)
         return 1;
     }
     if (!strcmp(argv[1], "off")) {
+        gen_mode = GEN_TONE;                                        // also stops a sweep or noise
         tone_hz = 0.0f;
         printf("tone off (silence)\n");
         return 0;
@@ -444,6 +600,7 @@ static int cmd_tone(int argc, char **argv)
     }
     tone_amp = powf(10.0f, dbfs / 20.0f);
     tone_hz = hz;
+    gen_mode = GEN_TONE;                                            // replaces a running sweep or noise
     printf("tone %.0f Hz at %.1f dBFS%s\n", hz, dbfs, audio_on ? "" : " (run 'audio on' to hear it)");
     return 0;
 }
@@ -543,6 +700,87 @@ static int cmd_eq(int argc, char **argv)
     return 0;
 }
 
+// sweep [start_Hz [stop_Hz [step_Hz [tone_ms [gap_ms [dBFS]]]]]] | off
+// Default: 40 Hz to the top of the band (7000 Hz at 16 kHz), every 10 Hz, 200 ms of tone then 100 ms of silence, -12 dBFS.
+// Tone k has frequency start + k * step and starts k * (tone + gap) ms after the sweep starts. Each tone has 5 ms fades.
+static int cmd_sweep(int argc, char **argv)
+{
+    if (argc >= 2 && !strcmp(argv[1], "off")) {
+        gen_mode = GEN_TONE;
+        tone_hz = 0.0f;
+        printf("sweep off\n");
+        return 0;
+    }
+    if (!audio_on) {
+        printf("run 'audio on <rate>' first (16000 for the wide band; keep 'vol' low, and 'audio out spk' for the earpiece)\n");
+        return 1;
+    }
+    int top = sample_rate * 44 / 100 / 10 * 10;                  // stay clear of the codec's band edge
+    if (top > 7000) {
+        top = 7000;
+    }
+    float f0 = 40.0f, f1 = (float)top, df = 10.0f, level = -12.0f;
+    int tone_ms = 200, gap_ms = 100;
+    if (argc >= 2) f0 = (float)atof(argv[1]);
+    if (argc >= 3) f1 = (float)atof(argv[2]);
+    if (argc >= 4) df = (float)atof(argv[3]);
+    if (argc >= 5) tone_ms = atoi(argv[4]);
+    if (argc >= 6) gap_ms = atoi(argv[5]);
+    if (argc >= 7) level = (float)atof(argv[6]);
+    if (f0 < 20.0f || f1 > sample_rate / 2.0f - 100.0f || f1 < f0 || df < 1.0f || tone_ms < 50 || tone_ms > 2000 ||
+        gap_ms < 0 || gap_ms > 2000 || level < -60.0f || level > 0.0f) {
+        printf("usage: sweep [start_Hz>=20 [stop_Hz<=%d [step_Hz>=1 [tone_ms 50-2000 [gap_ms 0-2000 [dBFS -60..0]]]]]] | off\n",
+               sample_rate / 2 - 100);
+        return 1;
+    }
+    int tones = (int)((f1 - f0) / df) + 1;
+    sw.f0 = f0;
+    sw.f1 = f1;
+    sw.df = df;
+    sw.amp = powf(10.0f, level / 20.0f);
+    sw.tone_n = tone_ms * sample_rate / 1000;
+    sw.gap_n = gap_ms * sample_rate / 1000;
+    sw.ramp_n = 5 * sample_rate / 1000;
+    sw.idx = 0;
+    sw.pos = 0;
+    sw.phase = 0.0f;
+    sw.finished = false;
+    gen_mode = GEN_SWEEP;                                        // last: starts the sweep
+    printf("sweep: %d tones from %.0f to %.0f Hz every %.0f Hz, %d ms tone + %d ms silence, %.0f dBFS, %d Hz sampling; "
+           "%.0f s. Tone k = %.0f Hz + k x %.0f Hz, starting k x %d ms in. Earpiece equalizer: %d (%s)\n",
+           tones, f0, f1, df, tone_ms, gap_ms, level, sample_rate, tones * (tone_ms + gap_ms) / 1000.0, f0, df,
+           tone_ms + gap_ms, eq_selected(false), eq_spk_profiles[eq_selected(false)].name);
+    return 0;
+}
+
+// noise [dBFS RMS [seconds]] | off   White noise (flat spectrum) at an RMS level (default -20 dBFS), forever or for a time.
+static int cmd_noise(int argc, char **argv)
+{
+    if (argc >= 2 && !strcmp(argv[1], "off")) {
+        gen_mode = GEN_TONE;
+        tone_hz = 0.0f;
+        printf("noise off\n");
+        return 0;
+    }
+    if (!audio_on) {
+        printf("run 'audio on <rate>' first (keep 'vol' low, and 'audio out spk' for the earpiece)\n");
+        return 1;
+    }
+    float level = argc >= 2 ? (float)atof(argv[1]) : -20.0f;
+    int secs = argc >= 3 ? atoi(argv[2]) : 0;
+    if (level < -60.0f || level > -6.0f || secs < 0 || secs > 3600) {
+        printf("usage: noise [RMS dBFS -60..-6 [seconds 0-3600, 0 = until 'noise off']] | off\n");
+        return 1;
+    }
+    nz.amp = powf(10.0f, level / 20.0f) * 1.7320508f;            // peak of uniform noise for that RMS
+    nz.until_us = secs ? esp_timer_get_time() + (int64_t)secs * 1000000 : 0;
+    nz.finished = false;
+    gen_mode = GEN_NOISE;
+    printf("white noise at %.1f dBFS RMS (peak %.1f dBFS)%s. Earpiece equalizer: %d (%s)\n", level,
+           level + 4.77f, secs ? "" : ", until 'noise off'", eq_selected(false), eq_spk_profiles[eq_selected(false)].name);
+    return 0;
+}
+
 static int cmd_mute(int argc, char **argv)
 {
     if (argc < 2 || (strcmp(argv[1], "on") && strcmp(argv[1], "off"))) {
@@ -565,6 +803,8 @@ void register_audio_commands(void)
         {.command = "vol", .help = "Net output gain in dB, -91.5 to +4.5: vol <dB>", .func = cmd_vol},
         {.command = "volstep", .help = "10-step volume: volstep <digit 0-9> [min_dB max_dB]", .func = cmd_volstep},
         {.command = "mute", .help = "DAC mute: mute on|off", .func = cmd_mute},
+        {.command = "sweep", .help = "Segmented tone sweep: sweep [start_Hz [stop_Hz [step_Hz [tone_ms [gap_ms [dBFS]]]]]] | off", .func = cmd_sweep},
+        {.command = "noise", .help = "White noise: noise [RMS dBFS [seconds]] | off", .func = cmd_noise},
         {.command = "eq", .help = "Output filter: eq lp <Hz> | hp <Hz> | hs <Hz> <dB> | off", .func = cmd_eq},
     };
     for (size_t i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++) {

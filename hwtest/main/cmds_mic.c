@@ -1,7 +1,8 @@
 // Stage 7: microphone (line-in) input. The MAX9814 module goes into the line-in jack (LIN2 / RIN2). The board's two
 // onboard microphones are wired to the SAME codec inputs (through C18 and C20), so they cannot be excluded in
-// firmware: remove C18 and C20. The firmware's part is to use only the left ADC channel, keep the right channel
-// (nothing connected, or unused) out of the audio, and keep the gain stages sensible.
+// firmware: they were removed from the board. The firmware's part is to use only ONE ADC channel, keep the other
+// (nothing connected, or unused) out of the audio, and keep the gain stages sensible. Measured on this board (stage 7):
+// the wire on the line-in plug's tip arrives on the RIGHT input (RIN2), so the right channel is the default.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,23 +23,31 @@
 #define REG_ADCCONTROL9 0x11    // ADC digital volume, right
 #define REG_ADCCONTROL14 0x16   // noise gate
 
-typedef enum { CH_LEFT, CH_BOTH } ch_mode_t;
+typedef enum { CH_LEFT, CH_RIGHT, CH_BOTH } ch_mode_t;
 
-// Defaults chosen for the best signal-to-noise from the MAX9814: left channel only, no analog gain after it.
-static ch_mode_t ch_mode = CH_LEFT;
+// Defaults chosen for the best signal-to-noise from the MAX9814: right channel only (where the plug tip arrives on this
+// board), no analog gain after it.
+static ch_mode_t ch_mode = CH_RIGHT;
 static int pga_step = 0;        // 0 dB
 static float adc_db = 0.0f;     // digital volume
 static bool gate_on = false;
+
+int mic_source_slot(void)
+{
+    return ch_mode == CH_RIGHT ? 1 : ch_mode == CH_LEFT ? 0 : -1;
+}
 
 void mic_apply(void)
 {
     codec_write(REG_ADCCONTROL2, 0x50);                                   // LIN2 / RIN2: the line-in jack
     codec_write(REG_ADCCONTROL1, (uint8_t)((pga_step << 4) | pga_step));
     // ADC power: bit 7 AINL, 6 AINR, 5 ADCL, 4 ADCR (1 = off), bit 3 MICBIAS (1 = off, we use our own supply), bit 0 low power.
-    // Left only: switch the right input and the right ADC off, so its noise never reaches the I2S data.
-    codec_write(REG_ADCPOWER, ch_mode == CH_LEFT ? 0x59 : 0x09);
-    // DATSEL = 01: the left ADC data goes to both I2S slots. 00 = each ADC to its own slot.
-    codec_write(REG_ADCCONTROL4, ch_mode == CH_LEFT ? 0x4c : 0x0c);
+    // One channel only: switch the other input and its ADC off, so its noise never reaches the I2S data.
+    // 0x59 = right off (left only), 0xa9 = left off (right only), 0x09 = both on.
+    codec_write(REG_ADCPOWER, ch_mode == CH_LEFT ? 0x59 : ch_mode == CH_RIGHT ? 0xa9 : 0x09);
+    // DATSEL = 01: the left ADC data goes to both I2S slots. 10: the right ADC data goes to both. 00 = each ADC to its
+    // own slot.
+    codec_write(REG_ADCCONTROL4, ch_mode == CH_LEFT ? 0x4c : ch_mode == CH_RIGHT ? 0x8c : 0x0c);
     int v = (int)lroundf(-adc_db * 2.0f);
     if (v < 0) {
         v = 0;
@@ -74,7 +83,7 @@ static int mic_level(int seconds)
         int n = 0;
         while (n < block) {
             int want = block - n > 512 ? 512 : block - n;
-            int got = audio_read_frames(buf, want, 500);
+            int got = audio_read_frames_raw(buf, want, 500);
             if (got <= 0) {
                 printf("no audio data from the codec (I2S read failed)\n");
                 return 1;
@@ -99,7 +108,7 @@ static int mic_level(int seconds)
 }
 
 // ---- Averaged levels: `mic avg` ----
-// Average over a number of seconds; also says whether the right channel is a copy of the left (chan left) or not.
+// Average over a number of seconds; also says whether the two channels are identical (chan left or right) or not.
 static int mic_avg(int seconds)
 {
     if (!audio_is_on()) {
@@ -111,10 +120,10 @@ static int mic_avg(int seconds)
     long total = (long)seconds * rate, n = 0, same = 0;
     double ss[2] = {0, 0}, dc[2] = {0, 0};
     int pk[2] = {0, 0};
-    audio_read_frames(buf, 512, 200);                                    // discard stale data
-    printf("measuring %d s, left and right channel...\n", seconds);
+    audio_read_frames_raw(buf, 512, 200);                                // discard stale data
+    printf("measuring %d s, left and right channel (raw: exactly as the codec delivers them)...\n", seconds);
     while (n < total) {
-        int got = audio_read_frames(buf, 512, 500);
+        int got = audio_read_frames_raw(buf, 512, 500);
         if (got <= 0) {
             printf("no audio data from the codec (I2S read failed)\n");
             return 1;
@@ -139,12 +148,13 @@ static int mic_avg(int seconds)
     printf("right: rms %6.1f dBFS, peak %6.1f dBFS, dc %+.4f\n", to_db(sqrt(ss[1] / n) / 32768.0), to_db(pk[1] / 32768.0),
            dc[1] / n / 32768.0);
     printf("right equals left in %.1f%% of the samples%s\n", 100.0 * same / n,
-           same == n ? " (right is an exact copy of the left channel)" : "");
+           same == n ? " (the two channels are identical: one ADC feeds both slots)" : "");
     return 0;
 }
 
 // ---- Signal-to-noise test: `mic snr [label]` ----
-// Phase 1: silence. Phase 2: speech. Phase 3: silence again. Uses the LEFT channel, in 100 ms blocks.
+// Phase 1: silence. Phase 2: speech. Phase 3: silence again. Reads the left I2S slot (which carries the selected ADC in
+// the one-channel modes), in 100 ms blocks.
 #define SNR_MAX_BLOCKS 200
 typedef struct {
     double rms;      // linear, full scale = 1
@@ -213,7 +223,8 @@ static int mic_snr(const char *label)
         return 1;
     }
     phase_t q1, sp, q2;
-    printf("Signal-to-noise test on the LEFT channel. Hold the handset or the module as in use.\n");
+    printf("Signal-to-noise test on the selected channel (%s). Hold the handset or the module as in use.\n",
+           ch_mode == CH_RIGHT ? "right" : ch_mode == CH_LEFT ? "left" : "both ADCs, left slot");
     countdown("Stay SILENT for 5 seconds, starting");
     if (!phase_run(5, blk_rms[0], &q1)) {
         printf("no audio data from the codec\n");
@@ -275,10 +286,12 @@ static int cmd_mic(int argc, char **argv)
     } else if (argc >= 3 && !strcmp(argv[1], "chan")) {
         if (!strcmp(argv[2], "left")) {
             ch_mode = CH_LEFT;
+        } else if (!strcmp(argv[2], "right")) {
+            ch_mode = CH_RIGHT;
         } else if (!strcmp(argv[2], "both")) {
             ch_mode = CH_BOTH;
         } else {
-            printf("usage: mic chan left|both\n");
+            printf("usage: mic chan right|left|both\n");
             return 1;
         }
     } else if (argc >= 3 && !strcmp(argv[1], "pga")) {
@@ -304,14 +317,15 @@ static int cmd_mic(int argc, char **argv)
     } else if (argc >= 2 && !strcmp(argv[1], "status")) {
         // fall through to the print below
     } else {
-        printf("usage: mic level [s] | avg [s] | snr [label] | chan left|both | pga <0-8> | gain <dB> | gate on|off | status\n");
+        printf("usage: mic level [s] | avg [s] | snr [label] | chan right|left|both | pga <0-8> | gain <dB> | gate on|off | status\n");
         return 1;
     }
     if (audio_is_on()) {
         mic_apply();
     }
     printf("mic: input line-in (LIN2/RIN2), channel %s, analog gain %d dB (step %d), digital %.1f dB, noise gate %s%s\n",
-           ch_mode == CH_LEFT ? "left only (right ADC off, left on both slots)" : "both", pga_step * 3, pga_step,
+           ch_mode == CH_LEFT ? "left only (right ADC off, left on both slots)"
+           : ch_mode == CH_RIGHT ? "right only (left ADC off, right on both slots)" : "both", pga_step * 3, pga_step,
            adc_db, gate_on ? "on" : "off", audio_is_on() ? "" : " (applied at 'audio on')");
     return 0;
 }
@@ -320,7 +334,7 @@ void register_mic_commands(void)
 {
     const esp_console_cmd_t cmd = {
         .command = "mic",
-        .help = "Line-in input (needs 'audio on'): level [s] | avg [s] | snr [label] | chan left|both | pga <0-8> | gain <dB> | gate on|off | status",
+        .help = "Line-in input (needs 'audio on'): level [s] | avg [s] | snr [label] | chan right|left|both | pga <0-8> | gain <dB> | gate on|off | status",
         .func = cmd_mic,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));

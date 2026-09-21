@@ -187,7 +187,9 @@ detect on **12**, SD card CS/MISO/MOSI/CLK on 13/2/15/14, card-detect on 34. **[
 - **The line-in jack J1 and the headphone jack J2 are both ordinary 3.5 mm stereo TRS jacks** (6 pins in the schematic:
   ground, left, right and two switch contacts; J2's switch also makes the HP-detect line on IO39). There is **no
   separate microphone jack**: the codec's mic inputs go only to the two onboard microphones. A stereo plug has tip =
-  left, ring = right, sleeve = ground (confirm with a continuity check to C11 and C13). **[K]**
+  left, ring = right, sleeve = ground (confirm with a continuity check to C11 and C13). **[K]** **Measured on our board
+  (stage 7, 2026-09-20): a signal on the plug tip arrives on the codec's RIGHT input (RIN2), not the left, so the
+  jack's left and right appear swapped (or the plug contacts are). We use the right channel.** **[T]**
 - **Consequences for this project:**
   1. Our microphone goes into the **line-in jack** (LIN2/RIN2). The firmware selects
      `AUDIO_HAL_ADC_INPUT_LINE1` today; it must become **`AUDIO_HAL_ADC_INPUT_LINE2`**. This repo's

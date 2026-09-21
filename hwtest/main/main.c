@@ -16,6 +16,7 @@ void app_main(void)
     esp_console_repl_t *repl = NULL;
     esp_console_repl_config_t repl_config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
     repl_config.prompt = "hwtest> ";
+    repl_config.task_stack_size = 8192;     // the SD commands use file I/O and need more than the 4 KB default
     esp_console_dev_uart_config_t uart_config = ESP_CONSOLE_DEV_UART_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_console_new_repl_uart(&uart_config, &repl_config, &repl));
 
@@ -25,6 +26,10 @@ void app_main(void)
     register_codec_commands();
     register_audio_commands();
     register_mic_commands();
+    register_sd_commands();
+    register_bt_commands();
+    register_eq_commands();
+    register_rec_commands();
 
     ESP_ERROR_CHECK(esp_console_start_repl(repl));
 }

@@ -15,6 +15,10 @@ separate from the main firmware in `gcore_pots_bt/`. **What to test, in what ord
 | `main/cmds_codec.c` | `codec`: ES8388 over I2C, with the repo's init register sequence |
 | `main/cmds_mic.c` | `mic`: line-in input levels and the input-path settings (left channel only, gains) |
 | `main/cmds_audio.c` | `audio`, `tone`, `vol`, `volstep`, `mute`: I2S out to the codec with MCLK on GPIO0 |
+| `main/eq.c`, `main/cmds_eq.c` | `eqp`: ten microphone and ten earpiece equalizer profiles (biquad filters), applied where the codec is read and written |
+| `main/cmds_rec.c` | `rec`: record the microphone to a WAV file on the SD card |
+| `main/cmds_bt.c` | `bt`: Bluetooth handsfree (HFP client) for stage 9: pairing by passkey typed at the console, connect, dial, answer, hang up, DTMF, and the call audio bridge to the codec |
+| `main/cmds_sd.c` | `sd`: microSD card in 1-bit mode (mount, listing, write/read tests, speed, WAV playback, bank seek, many-files test). Never formats. |
 | `main/cmds.h` | Shared declarations |
 | `sdkconfig.defaults` | Board settings, below |
 
@@ -86,7 +90,24 @@ After a reset the monitor shows `hwtest>`. Type a command and press Enter. `help
 | `volstep <0-9> [min max]`          | The 10-step volume model: digit 1 quietest, 0 loudest; default range -43.5 to +4.5 dB                                  |
 | `eq lp <Hz>\|hp <Hz>\|hs <Hz> <dB>\|off` | Output filter: 2nd-order low-pass or high-pass, or a high shelf (negative dB cuts the highs). Prints its response at 60 Hz to 3.4 kHz. |
 | `mute on\|off`                     | DAC mute                                                                                                              |
-| `mic level [s]\|avg [s]\|snr [label]\|chan left\|both\|pga <0-8>\|gain <dB>\|gate on\|off\|status` | Line-in input (needs `audio on`): `avg` averages the left and right levels (and checks if right is a copy of left); `snr` is the guided silence/speech/silence signal-to-noise test; `level` is live; `chan left` powers down the right input and sends the left ADC to both slots; `pga` is 3 dB per step; `gain` is the ADC digital gain |
+| `mic level [s]\|avg [s]\|snr [label]\|chan right\|left\|both\|pga <0-8>\|gain <dB>\|gate on\|off\|status` | Line-in input (needs `audio on`): `avg` averages the left and right levels (and checks if the two are identical); `snr` is the guided silence/speech/silence signal-to-noise test; `level` is live; `chan right` (the default; the plug tip arrives on the right input on this board) powers down the left input and sends the right ADC to both slots, `chan left` does the opposite, `chan both` runs both; `pga` is 3 dB per step; `gain` is the ADC digital gain |
+| `eqp list\|status\|mic <0-9\|off>\|spk <0-9\|off>\|show mic\|spk <n>\|bench` | Equalizer profiles. `list` shows both sets (digit 0 = flat), `mic n` and `spk n` select one (kept until changed or reset) and print its filters and its response at 100 Hz to 7 kHz, `bench` times every profile. The microphone profile applies to `mic`, `rec` and the microphone side of a call; the earpiece profile applies to tones, `sweep`, `noise`, `sd play` and the earpiece side of a call. The older `eq` command is a separate single filter on the tone output only. |
+| `sweep [start [stop [step [tone_ms [gap_ms [dBFS]]]]]]`, `sweep off` | Segmented tone sweep for recording and analysis. Default 40 Hz to the top of the band (7000 Hz at 16 kHz), every 10 Hz, 200 ms of tone then 100 ms of silence, -12 dBFS, with 5 ms fades. Tone k is `start + k x step` Hz and starts `k x (tone + gap)` ms in (697 tones, about 209 s, at the defaults). Timing is sample-exact. |
+| `noise [RMS dBFS [seconds]]`, `noise off` | White noise at an RMS level (default -20 dBFS), until stopped or for a time. |
+| `rec start <name.wav> [seconds]`, `rec stop`, `rec status` | Record the microphone (after the `eqp mic` profile) to a mono 16-bit WAV on the SD card at the codec's sample rate. Needs `audio on` and `sd mount rw`. The audio is captured into RAM (as long as the free PSRAM allows: about 110 s at 16 kHz, 220 s at 8 kHz) and written to the card only after the capture ends, because SD writes during capture put a noise burst into the microphone every 16 ms. Reports the level. |
+| `bt on`, `bt status`, `bt stats` | Start Bluetooth Classic (device name `weeBell-test`, not discoverable). `status` shows the connection, call, call audio and bonded devices; `stats` shows the call-audio byte counts, packet sizes and underruns. |
+| `bt pair [s]`, `bt nopair`, `bt iocap in\|io\|out\|none` | Make it discoverable for `s` seconds (default 60). `iocap none` (default) = Just Works, the only one that worked with an iPhone; `in` = KeyboardOnly passkey entry (the iPhone never showed a code). |
+| `bt passkey <6 digits>`, `bt yes`, `bt no` | Answer the pairing prompt: type the passkey the phone shows (or confirm or refuse a numeric comparison) |
+| `bt list`, `bt forget`, `bt connect [addr]`, `bt disconnect`, `bt auto on\|off` | Bond list, remove all bonds, connect HFP to the first bonded phone (or an address), auto-reconnect every 10 s (default on) |
+| `bt dial <n>`, `bt answer`, `bt hangup`, `bt dtmf <c>`, `bt calls`, `bt audio on\|off`, `bt vol spk\|mic <0-15>`, `bt gain rx\|tx <dB>`, `bt nrec` | Call control. During a call, SCO audio is bridged: phone to earpiece (set `audio out spk` first) and microphone to phone. `nrec` asks the phone to turn off its echo cancellation. |
+| `sd mount [rw] [pu] [kHz]`, `sd unmount`, `sd cd` | Mount the card (1-bit, FAT, **read-only by policy** unless `rw`; never formats; `pu` = internal pull-ups, `kHz` = bus speed, default 20000). Prints the card and filesystem. `sd cd` reads the card-detect pin IO34. |
+| `sd ls [dir] [max]`, `sd rm <file>` | List a directory with sizes; remove a file (needs `rw`) |
+| `sd test`, `sd check` | `test` (rw) writes a 256 KB pattern file and reads it back; `check` (read-only) re-verifies that file, for use after each power cycle |
+| `sd speed [MB]` | Write (once, needs `rw`) and sequential read speed, with per-read latency (avg, median, 95th percentile, max) and the number of reads over 20 ms. Reads are timed twice: through stdio `fread` and through POSIX `read()`, at 64 KB and 4 KB. |
+| `sd gen <name.wav> <rate> <s>` | Write a mono 16-bit test WAV (1 kHz sine, -12 dBFS) so playback can be tested without a computer |
+| `sd play <name.wav> [frames]` | Stream a 16-bit WAV to the codec (needs `audio on <same rate>`; `audio out spk` for the earpiece; keep `vol` low). Prints how many reads took longer than the I2S buffers allow. |
+| `sd bank make [MB]`, `sd bank seek [n] [posix]` | One big file, then random seek plus 4 KB read timings and a content check (the "bank" option, target under 20 ms). `posix` uses `open`/`lseek`/`read` instead of stdio. |
+| `sd scale make <n>`, `sd scale open [n]`, `sd scale clean` | Make hundreds of small files, time opening random ones by name, then remove them |
 
 Only these pins can be touched: **IO13/MTCK, IO18, IO23, IO22, IO19, IO5, IO21** (IO21 is the speaker-amp enable, driven by `audio out spk`).
 The `pins` table shows each one's role. Pins start as plain inputs with no pulls, so ones with nothing

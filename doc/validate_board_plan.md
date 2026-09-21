@@ -434,9 +434,10 @@ and the best signal-to-noise from the MAX9814.
 **DIP:** all OFF.
 
 **How the input path is set up** (by `audio on`, in firmware)
-- **Line-in, left channel only.** The plug tip is the left channel. The codec's right input and right ADC are switched off
-  (ADC power register 0x03 = 0x59) and the left ADC is sent to both I2S slots (register 0x0c = 0x4c). The main firmware
-  also reads only the left slot.
+- **Line-in, right channel only.** Measured on this board (2026-09-20): a signal on the plug tip arrives on the codec's
+  **right** input (RIN2), not the left the schematic suggests. The codec's left input and left ADC are switched off (ADC
+  power register 0x03 = 0xA9) and the right ADC is sent to both I2S slots (register 0x0c = 0x8c). The main firmware
+  reads only the left slot, which then carries the right ADC's data.
 - **No extra gain after the MAX9814:** the codec's input amplifier is 0 dB (the driver's default is +9 dB) and the ADC
   digital gain is 0 dB.
 - **The onboard microphones cannot be excluded in firmware.** They connect to the same codec inputs as the line-in jack
@@ -451,7 +452,7 @@ and the best signal-to-noise from the MAX9814.
 | `mic avg [seconds]` | Measures for that many seconds (default 5) and prints the left and right RMS, peak and DC level in dBFS, and whether the right channel is an exact copy of the left. |
 | `mic snr [label]` | The signal-to-noise test: 5 s of silence, 5 s of speech, 5 s of silence, with on-screen prompts and a 3-second countdown before each. Prints the silence level before and after, the speech RMS and peak, clipped samples, the signal-to-noise, and a one-line summary tagged with the label. |
 | `mic level [seconds]` | Live left and right levels every half second (for watching while you adjust something). |
-| `mic chan left\|both` | `left` = the setup above (default). `both` = both channels, for test 3 only. |
+| `mic chan right\|left\|both` | `right` = the setup above (default). `left` = the mirror image. `both` = both channels, for test 3 only. |
 | `mic pga <0-8>`, `mic gain <dB>`, `mic gate on\|off` | Codec input gain (3 dB per step), ADC digital gain, noise gate. Leave them at the defaults. |
 
 Levels are in dBFS: 0 is full scale and lower numbers are quieter (-60 is much quieter than -20).
@@ -480,13 +481,19 @@ left or fully right). Plug it into the line-in jack. Turn it up to a moderate le
 
 | Step | Play | Type | Expect |
 |---|---|---|---|
-| 3a | tone on the **right** channel only | `mic chan both`, then `mic avg 5` | right RMS loud (well above the noise floor of test 1); left near the floor |
-| 3b | same tone, right only | `mic chan left`, then `mic avg 5` | **both left and right near the floor**; "right equals left in 100%" |
-| 3c | tone on the **left** channel only | `mic avg 5` (still `chan left`) | left and right both loud and equal; "right equals left in 100%" |
+| 3a | tone on the **left** channel only | `mic chan both`, then `mic avg 5` | left RMS loud (well above the noise floor of test 1); right near the floor |
+| 3b | same tone, left only | `mic chan right`, then `mic avg 5` | **both left and right near the floor**; "right equals left in 100%" |
+| 3c | tone on the **right** channel only | `mic avg 5` (still `chan right`) | left and right both loud and equal; "right equals left in 100%" |
 
-**Pass:** 3b shows no sign of the right-channel tone. If it fails, the register values need correcting: read the
-registers with `codec r 0x03`, `codec r 0x0c`, correct them from the ES8388 datasheet with `codec w`, and record the
-working values.
+**Pass:** 3b shows no sign of the left-channel tone. If it fails, the register values need correcting: read the
+registers with `codec r 0x03` (expect 0xA9), `codec r 0x0c` (expect 0x8c), correct them from the ES8388 datasheet with
+`codec w`, and record the working values.
+
+**Done 2026-09-20 without a stereo source.** There was no cable for a tone, so the register values were checked instead
+(the earlier left-only setup read 0x59 and 0x4c as expected), and the MAX9814 on the plug tip showed up on the right
+channel only with `mic chan both` (left −80 dBFS, right moving with claps). That showed the tip is the right input. The
+setup is now right-only (0xA9 and 0x8c); after reflashing, `codec r 0x03` and `codec r 0x0c` should read those values, and
+`mic avg` with the module quiet should read "right equals left in 100%".
 
 ### Test 4. MAX9814 gain: 40, 50 and 60 dB
 
@@ -501,9 +508,16 @@ For each setting, **power the module off and on** after moving the strap, then:
 
 | GAIN pin | Silence before | Silence after | Speech RMS | Speech peak | Clipped samples | Signal-to-noise |
 |---|---|---|---|---|---|---|
-| 40 dB (VCC) | | | | | | |
-| 50 dB (GND) | | | | | | |
-| 60 dB (open) | | | | | | |
+| 40 dB (VCC) | −58.9 | −21.4 (not silent; invalid) | −21.0 | −5.8 | 0 | 37.9 (against the first silence) |
+| 50 dB (GND) | not run | | | | | |
+| 60 dB (open) | not run | | | | | |
+
+**Result so far (2026-09-20).** Module at about 5 cm, right channel, sleeve-only ground. The first silence was room
+noise (−58.9 dBFS, against a quiet-room floor of −77 to −82) and the second silence was not silent, so only the first
+figure counts. **40 dB is the lowest gain the module offers and speech already peaks at about the −6 dBFS limit, so 50 and
+60 dB would clip and were not run. Decided: 40 dB, A/R open, no further tuning.** If the microphone is too hot in the
+handset, attenuate it physically (foam or cloth over the capsule opening). Speech and clap peaks are strong: claps reach
+0 dBFS.
 
 **How to read it**
 - **Signal-to-noise** is speech RMS minus silence RMS. **Aim for at least 40 dB.**
@@ -551,9 +565,14 @@ Repeat `mic avg 30` and `mic snr ringing` while the bell is being driven, to che
   jack tip; the corner is `1 / (2π · R_in · C)` with R_in the codec's line-in resistance (10 kΩ with 0.1 µF is 160 Hz).
 - **Placement:** keep the module away from the earpiece (feedback).
 
-**Pass:** the microphones report `NO VOICE DETECTED`, the right channel cannot mix in (test 3b), and the chosen MAX9814
+**Pass:** the microphones report `NO VOICE DETECTED`, the unused (left) channel cannot mix in (test 3b), and the chosen MAX9814
 setting gives a signal-to-noise of at least 40 dB with speech peaks at or below -6 dBFS and no clipping, also through the
 real cord.
+
+**Status (2026-09-20), not yet passed:** done: tests 1, 2 (mics removed, no voice detected, floor −82 dBFS), 3 (by register
+readback) and 4 (40 dB chosen; signal-to-noise 37.9 dB against the first silence, peak −5.8 dBFS, so just short of 40 dB and
+at the peak limit). Not done: a clean re-run of the 40 dB test with a truly silent second phase, test 5 (USB against a
+charger), test 6 (the real cord, not yet built) and test 7 (with the ring driver). Tuning is stopped for now.
 ---
 
 ## Stage 8 — SD card for voice prompts
@@ -567,6 +586,22 @@ real cord.
   (`components/utility/sample.c`) sets `format_if_mount_failed = true`; do not reuse that setting.
 - Leave the SD card **out** while flashing until step 3 proves it is safe.
 
+**Tool:** the `hwtest` command `sd` (see `hwtest/README.md`). It mounts in 1-bit mode, never formats, and mounts
+**read-only by policy** unless you type `sd mount rw`. Which command does which step:
+
+| Step | Commands |
+|---|---|
+| 1 and 2 (mount, list, write and read back) | `sd mount`, `sd ls`, then `sd unmount`, `sd mount rw`, `sd test` |
+| 3 (boots and flashes with the card in) | reset with the card inserted, then `sd mount`, `sd check`; and flash once with it inserted |
+| 4 (speed and latency) | `sd speed 4` |
+| 5 (playback) | `sd gen t16.wav 16000 20`, `audio on 16000`, `audio out spk` (keep `vol` low), `sd play t16.wav`; repeat with `sd gen t8.wav 8000 20`, `audio on 8000`, `sd play t8.wav`. **Done at 16 kHz 2026-09-20:** 0 of 157 chunks over budget, sounded clean. |
+| 6 (hundreds of files, and the bank) | `sd scale make 500`, `sd scale open`; `sd bank make 16`, `sd bank seek`; repeat `sd bank seek` after rebuilding with `CONFIG_FATFS_USE_FASTSEEK=y` |
+| 7 (reliability) | after each power cycle `sd mount`, `sd check`; and `sd cd` while inserting and removing the card |
+| 8 (card sizes and brands) | repeat steps 1 to 4 with a second card |
+
+`sd mount` and `sd check` should print PASS after each of the 50 power cycles. The build needs `CONFIG_FATFS_LFN_HEAP`
+(added to `sdkconfig.defaults`), which only takes effect on a fresh configuration: delete `hwtest/sdkconfig` and rebuild.
+
 1. **Set the DIP switches** for SD: **SW2 OFF** (leave DATA3 pulled up on the card side), **SW3 ON**
    (IO15 to CMD). Use **1-bit SDMMC mode** (needs only IO14, IO15, IO2), and mount a FAT32 card
    read-only first. The card's DATA lines are pulled up on the board.
@@ -575,10 +610,10 @@ real cord.
    means we must document "remove the card to flash," or add a workaround. Check both **power-on** and
    **flashing** with the card present. (GPIO2, 12 and 15 have pull-ups on the SD side and are strapping
    pins.)
-4. **Speed test:** measure sequential read speed in 1-bit mode. Voice at 44.1 kHz, 16-bit mono needs about
-   90 KB/s, so the requirement is easily met; the goal is finding **latency** and **hiccups**.
-5. **Playback:** stream a 16-bit mono WAV from the SD card (a clip inside the single bank file, or a separate file) to the codec at **16 kHz, 22.05 kHz and
-   44.1 kHz** while the rest of the system idles. Listen for dropouts. Try streaming while Bluetooth is
+4. **Speed test:** measure sequential read speed in 1-bit mode. Voice at 16 kHz, 16-bit mono needs about
+   32 KB/s (8 kHz needs 16), so the requirement is easily met; the goal is finding **latency** and **hiccups**.
+5. **Playback:** stream a 16-bit mono WAV from the SD card (a clip inside the single bank file, or a separate file) to the codec at **8 kHz and 16 kHz** (the
+   two banks in the design; nothing higher is used) while the rest of the system idles. Listen for dropouts. Try streaming while Bluetooth is
    active (stage 9 repeats this).
 6. **Scale test:** put **hundreds of files** on the card (the plan has many prompts and variants) and
    measure the time to open a file by name. Check that file names follow the clip IDs in
@@ -596,6 +631,49 @@ built-in fallback prompts for when the card is missing.
 **Pass:** reliable mount, playback at the chosen rate without dropouts, boots with the card in, hundreds of
 files fine.
 
+**Results so far (2026-09-20).** 1-bit SDMMC mode at 20 MHz works. Two cards tried; long file names needed
+`CONFIG_FATFS_LFN_HEAP` (the I2S driver also needed `intr_alloc_flags = 0` once the card was mounted, see
+`initial_design.md`).
+
+| | 128 MB SDSC, FAT16, 2 KB clusters | 64 GB SDXC ("SD64G"), FAT32, 32 KB clusters |
+|---|---|---|
+| Mount | 300 ms first, about 40 ms later | 293 ms first, 52 ms later |
+| Write/read-back test | PASS | PASS |
+| Write speed | 1501 KB/s | 2098 KB/s |
+| Sequential read, 4 KB chunks | 545 KB/s; 7.3 ms per read, max 8.1; none over 20 ms | 599 KB/s; 6.7 ms per read, max 7.3; none over 20 ms |
+| Bank: random seek + 4 KB read (16 MB file, fast seek off) | median 15.1, 95th percentile 28.9, max 33.9 ms | median 8.0, 95th percentile 9.4, max 10.1 ms |
+| 500 files: open by name + read 512 bytes (stdio) | avg 28.4, 95th percentile 51.3 ms; listing 96 ms | avg 22.0, median 21.4, 95th percentile 41.2, max 41.8 ms; listing 84 ms; all found, 0 wrong |
+| 16 kHz and 8 kHz playback | 0 of 157 and 0 of 40 chunks over budget; sounds clean | not run |
+
+- **Cards over 32 GB come as exFAT and do not mount**; they must be formatted FAT32 with an MBR map on the Mac
+  (`diskutil eraseDisk FAT32 NAME MBRFormat /dev/diskN`). The first card had a FAT32 layout with too few clusters
+  (125 MB), which FatFs also rejects ("no filesystem"); `diskutil eraseDisk MS-DOS` made it FAT16 and it mounted.
+- **Seek time depends on the cluster size**, not on the card: with 2 KB clusters a 16 MB file is 8192 clusters to walk;
+  with 32 KB clusters it is 512. The bank meets the 20 ms target on the large-cluster card without fast seek.
+- **Read speed was limited by stdio, not the card or bus.** On the 64 GB card, `fread` gave about 570 KB/s at any chunk
+  size (stdio refills a small internal buffer), while POSIX `open()`/`read()` gave **1904 KB/s at 4 KB chunks (2.1 ms
+  each) and 2354 KB/s at 64 KB**. The bank's random seek plus 4 KB read dropped from 8.3 ms (95th percentile 9.1) with stdio to
+  **3.2 ms (95th percentile 4.7)** with POSIX. Writes, which use large `fwrite`s, were already 2.1 MB/s. The main firmware
+  should use POSIX calls (or raise `CONFIG_FATFS_VFS_FSTAT_BLKSIZE`). Even the stdio speed is far above the 32 KB/s a
+  16 kHz stream needs.
+- **The 128 MB card shows the same pattern** (POSIX 4 KB reads 2.6 ms and 1532 KB/s, against stdio 7.6 ms and 526 KB/s),
+  but its bank seek stays above the target even with POSIX reads: median 11.6 ms, 95th percentile 24.9 ms (stdio 15.4 and
+  29.9). With 2 KB clusters the seek itself costs about 9 ms, against about 1 ms on the 64 GB card. Use a card formatted with
+  large clusters for the bank.
+- **Flashed with the card inserted: worked (2026-09-20).**
+- **Swapping the card while mounted:** the mount does not notice; the next access fails with a timeout
+  (`sdmmc_host_wait_for_event returned 0x107`, then "No such device"), and `sd unmount` then `sd mount` brings the new card
+  up. The card-detect pin IO34 read 0 in both readings taken (unclear whether the card was in and out), so it may not
+  toggle; run `sd cd` with the card in, out, in again to settle it. Not needed: hot swap is a nice-to-have, and the firmware
+  can do it by mounting read-only, treating a timeout as "card gone" (unmount) and retrying the mount on demand or every few seconds.
+- **Per-clip files against the bank:** opening a file by name in a flat 500-file directory took about 22 ms on the large
+  card (95th percentile 41 ms), against 3.2 ms for a bank seek with POSIX reads, and it grows with the number of files
+  (linear directory scan). This supports the bank design.
+- **Skipped by decision (2026-09-20): the 50 power cycles.** Evidence instead: several boots and remounts on both cards, a
+  flash with the card inserted, and a card swap, all clean. Accepted risk: a rare card that fails to mount after a power
+  cycle would be caught by the main firmware retrying the mount (see the hot-swap note above).
+- **Cleanup:** `sd scale clean` removes the 500 test files.
+
 ---
 
 ## Stage 9 — Bluetooth handsfree
@@ -603,6 +681,93 @@ files fine.
 **Goal:** pair with a real phone, place and receive a call, and pass voice audio both ways.
 
 **DIP:** SW3 ON, rest OFF (SD needed for the step 7 coexistence test).
+
+**Tool:** the `hwtest` command `bt` (see `hwtest/README.md`; source `main/cmds_bt.c`). It mirrors `bt_task.c`'s Bluetooth
+setup, but pairing and calls are console commands, because the dial is not ready. Before the first `bt on`: rebuild from a
+fresh configuration (`rm sdkconfig`, then `idf.py build`); the Bluetooth options are in `sdkconfig.defaults`. Set the
+earpiece first: `audio out spk` and a low `vol` (the call audio uses the codec, restarted at 8 or 16 kHz per call).
+
+| Step | Commands |
+|---|---|
+| 1 (bring up, discoverable) | `bt on`, `bt status`, `bt pair` |
+| 2 (pairing) | `bt pair` (Just Works is the default and works with an iPhone), pick `weeBell-test` on the phone, choose a device type if asked. Passkey entry (`bt iocap in`, then `bt passkey NNNNNN`) failed on the iPhone; `bt iocap io` gives numeric comparison (`bt yes` / `bt no`) |
+| 3 (connect, calls) | `bt connect` (or the phone connects itself), `bt dial 1NNNNNNNNNN`, `bt answer`, `bt hangup`, `bt dtmf 5`, `bt calls` |
+| 4 (voice audio) | during a call the log shows `call audio: connected (CVSD, 8 kHz)` or `(mSBC, 16 kHz)`; talk and listen; `bt stats` |
+| 5 (latency, echo) | listen for delay and echo; `bt nrec` asks the phone to turn off its own echo cancellation (what the main firmware does today) so you can compare with and without |
+| 6 (reconnect) | reset the board and the phone; `bt status` after 10 to 20 s (auto-connect retries every 10 s; `bt auto off` to stop it) |
+| 7 (coexistence) | `sd mount`, `sd play` and `audio` commands during a call; watch `bt stats` for underruns |
+
+**iPhone results so far (2026-09-20).** Passkey entry (`bt iocap in`, KeyboardOnly) **failed**: the iPhone connected, our
+stack requested a passkey, the iPhone never displayed one, and pairing timed out after about 30 s (authentication failure
+reason 5, "connection unsuccessful"). **Just Works (`bt iocap none`) paired at once** and HFP connected (service-level
+connection, with the phone's battery and signal indicators arriving). After pairing the iPhone shows its own "device type"
+menu (headphones, speaker, car stereo and so on): that is iOS's 14.4+ classification of third-party audio devices, used
+for headphone-volume notifications, and I found no accessory-side field that skips it. Apple's guidelines (section 2.1.5)
+name only Numerical Comparison, so passkey entry through the dial is not a path an iPhone supports; see the design doc.
+
+**Audit against Apple's *Bluetooth Accessory Design Guidelines for Apple Products* (R7, the copy I could read; the current
+*Accessory Design Guidelines* PDF was too large to fetch, so newer requirements, including any class-of-device section, are
+unchecked).**
+
+| Apple requirement (section) | What `hwtest` sends | Status |
+|---|---|---|
+| Core spec 2.1 + EDR or higher (2.1) | Bluetooth 4.2 BR/EDR | OK |
+| Support and request sniff mode; accept role switch (2.1.2, 2.1.3) | the phone requested sniff and the link entered it | OK (role switch not observed) |
+| Extended Inquiry Response has the local name and TX power (2.1.4) | name and UUIDs by default; TX power was off | **Fixed**: `bt on` now sets TX power and UUIDs |
+| Secure Simple Pairing; Numerical Comparison if there is a display and input (2.1.5) | SSP on; no display, so Just Works | OK (passkey entry is not offered) |
+| Device ID profile 1.3+ with a Bluetooth SIG vendor ID (2.2.1) | none was sent | **Added** with the stack's own function (IDF 4.4.4 has no public API): USB-IF source, pid.codes test vendor and product `0x1209/0x0001`, version `0x0100`. A hobby device has no SIG company ID; change the `DID_*` constants if it gets IDs. |
+| HFP 1.5 or higher (2.2.2) | 1.6 with wide-band speech | OK |
+| Support remote volume control and voice-recognition bits in BRSF (2.2.2.1, 2.2.2.3) | the stack sends echo/noise, 3-way, caller ID, voice recognition, remote volume, enhanced call status and control, and codec negotiation | OK |
+| Use indicator events, not polling (2.2.2.2) | the stack enables them (indicator events arrive) | OK |
+| Turn off the phone's echo cancellation with `AT+NREC` only if the accessory does its own (2.2.2.4) | not sent | OK: the design has no local echo canceller. `bt nrec` is available for a comparison. |
+| In-band ringing (2.2.2.5) | the bell rings instead | not used by design |
+| eSCO S2/S3 and audio rendered within 40 ms of the link opening (2.2.2.6) | S-settings are the stack's; call audio starts after a codec restart | **Measure**: `bt on` and a call now print how many ms the bridge took to start |
+| Wide-band speech with T2 (2.2.2.7) | mSBC enabled | OK |
+| `AT+XAPL` after the service-level connection, `AT+IPHONEACCEV` for battery (4, 5) | not sent | **Not possible in IDF 4.4.4** (no API); only needed for battery display and Siri status |
+
+**Call audio results (2026-09-20, iPhone, dial-out, `hwtest` `bt`).** mSBC at 16 kHz was negotiated; the codec restart took
+182 ms (Apple asks for audio within 40 ms). After enlarging the jitter buffers (30 ms earpiece side, 20 ms microphone side,
+64-frame blocks, 24 ms of I2S buffering) a 54 s call had **0 gaps, 0 trims and 0 drops** in both directions (7252 packets of
+240 bytes each way); before that the far end reported crackle. Levels: from the phone **peak 0.0 dBFS, average −15.5 dBFS** (a
+hot signal, so the earpiece is quiet because of the 820 Ω pads, sized with a full-scale tone, not because the signal is low:
+changing 820 Ω to 330 Ω per leg would give about +8 dB; the phone's signal uses the full 16-bit range: peaks at 0.0 dBFS in both
+calls, average −15.5 and −17.0 dBFS); to the phone peak −1.6 dBFS. The far end reported **clipping when the microphone is 2
+cm from the mouth and good audio at 30 cm**. **`bt gain tx -12` (digital, after the codec) fixed it**, with a second call
+peaking at −5.6 dBFS: so the distortion was not the MAX9814 saturating (an earlier guess); the uplink was simply too hot at
+close range. **The microphone default is now −12 dB** (the design's microphone volume digit 6 is about −12.8 dB); no foam
+is needed. To make the earpiece louder: try `vol 4.5` first (+4.4 dB over `volstep 0`), then smaller pad resistors (330 Ω:
++8 dB, 220 Ω: +11 dB, 150 Ω: +15 dB, more hiss). Still to do: echo (`bt nrec`), reconnect after a reset, coexistence with the SD card.
+
+**Earpiece pads changed (2026-09-20): 160 Ω in each leg, replacing 820 Ω**, after trying the earpiece profiles (about −38 dB;
+roughly 14 dB louder). Earlier stage 6 results (the volume steps, "slightly loud", no audible hiss) were with 820 Ω, so
+re-check the hiss with the call idle and the volume-step spacing with the new pads.
+
+**Equalizer test procedure (tools built 2026-09-20, not yet run).** `eqp list` shows ten microphone and ten earpiece
+profiles (design: "Equalizer profiles"). To measure the *earpiece and housing response*: put the earpiece and a reference
+microphone (a phone or an audio interface) in the final housing position, `audio on 16000`, `audio out spk`, a low `vol`,
+`eqp spk 0`, `sweep` (or `noise`) and record it on the other device; repeat with `eqp spk <n>` to see what each profile
+does. To measure the *microphone in its housing*: put a reference speaker at the mouthpiece, play a sweep or noise from it
+(a phone), `eqp mic 0`, `rec start raw.wav 60`, then repeat with `eqp mic <n>`; compare the recordings' spectra. The sweep tone
+k is at `40 Hz + 10 Hz x k` and starts `k x 300 ms` in, so a script can cut the recording into segments and measure each
+tone's level. During a call, `eqp mic <n>` and `eqp spk <n>` change the sound live.
+
+**CPU cost of software tone shaping (`bt bench`, measured 2026-09-20; now `eqp bench`).** With the product's settings (`-O2`, 240 MHz; `hwtest`
+now uses both) a high-pass plus a high shelf costs **96 cycles per sample = 0.64% of one core** at 16 kHz (high-pass alone
+74 cycles, 0.49%); both directions with both filters about 1.28%. With the default debug build at 160 MHz it was 173 cycles,
+1.73%. The iPhone's own noise cancellation was never turned off in `hwtest` (`bt nrec` is manual only); the main firmware's
+`esp_hf_client_send_nrec()` at `bt_task.c:983` should be deleted, as the design already says.
+
+The class of device is not covered by the R7 text. `bt cod <minor> [major [service hex]]` sets it; `bt cod 1 4 120` gives
+0x240404, the value common headsets use. **Result: the iOS device-type menu (Car Stereo, Headphone, Hearing Aid, Speaker,
+Other) appears with hands-free (minor 2) and with loudspeaker (minor 6); no class stops it.** It is one tap at pairing, and
+"Speaker" was chosen. The default stays hands-free, the honest class for this device. Note that a device the phone treats as
+a speaker may be offered for music, but this device has no A2DP: it carries phone-call audio only.
+
+Found while preparing: the main firmware's `sdkconfig` has **`CONFIG_BT_SSP_ENABLED` off**, so its `#if (CONFIG_BT_SSP_ENABLED
+== true)` blocks (including the passkey and numeric-comparison handling) are compiled out and it pairs with a legacy PIN. The
+passkey-entry design needs it **on**; `hwtest` turns it on. (With SSP on, a phone that supports SSP will not use the legacy PIN.)
+The Bluetooth image (about 1.1 MB) also does not fit the default 1 MB app partition, so `hwtest` uses the large single-app
+partition table (1.5 MB); check the main firmware's partition table the same way when it gets SSP and the SD code.
 
 1. **Bring up Classic Bluetooth** with the HFP client (as `bt_task.c` does) and confirm the device is
    discoverable and connectable. Use the ELEGOO board first if it is quicker; the code path is the same.
@@ -726,8 +891,8 @@ Validation is finished when every row below is **confirmed working** on the real
 | Codec control over I2C | 5 | 2026-09-19 |
 | Earpiece audio out, chosen sample rates, even volume steps | 6 | 2026-09-20 |
 | Microphone in (MAX9814), onboard mics isolated, gain chosen | 7 | |
-| SD card: mount, boot-safe, high-resolution playback, hundreds of files | 8 | |
-| Bluetooth: pairing (passkey), calls, two-way voice | 9 | |
+| SD card: mount, boot-safe, playback at 8 and 16 kHz, hundreds of files | 8 | 2026-09-20; the 50-power-cycle test skipped, accepted risk |
+| Bluetooth: pairing (Just Works: passkey entry does not work with an iPhone), calls, two-way voice | 9 | in progress: pairing, dial-out call and two-way 16 kHz voice work (2026-09-20); reconnect, incoming call, SD coexistence open |
 | Dial and hook decoding on the real contacts | 10 | |
 | Ring driver: frequency, voltage, cadence, boot-safe | 11 | |
 | Power: current table, battery operation, brown-out, charging | 12 | |
