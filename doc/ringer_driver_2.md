@@ -1,4 +1,4 @@
-# Ringer Driver, Version 2 (PhotoMOS H-bridge, 150–220 V)
+# Ringer Driver, Version 2 (PhotoMOS H-bridge, 150–160 V)
 
 Replaces the DRV8825 ring driver in `doc/initial_design.md` (section "Ring driver") and the stage 11 plan in
 `doc/validate_board_plan.md`. Written 2026-09-27 from bench measurements and a design discussion on the same day.
@@ -104,7 +104,7 @@ combination rang at all") was therefore a driver or supply fault, not the bell.
 - Time constant L/R is about **8.5 ms** for one coil, and about the same for the pair (roughly 34 H over 4 kΩ; more if the
   coils are strongly coupled). A 20 Hz half-cycle is 25 ms.
 - Current rises at about V / L at first: **1.1 mA/ms at 38 V, 4.4 mA/ms at 150 V** (series pair, 34 H).
-- Steady current at 150 V would be about 36 mA; at 200 V about 48 mA. The on-time is short, so real peaks stay lower.
+- Steady current at 150 V would be about 36 mA; at 160 V about 38 mA. The on-time is short, so real peaks stay lower.
 - Energy stored in the coils at 30 mA is about ½ L I² ≈ 15 mJ. It has to be dumped at every turn-off (section 4.4).
 - **Power while ringing** is about 1.5 to 2 W (the original was about 90 V × 15 mA). Averaged over the US cadence (2 s on,
   4 s off) it is about 0.5 to 0.7 W.
@@ -117,7 +117,7 @@ combination rang at all") was therefore a driver or supply fault, not the bell.
 - **"Both coils are needed."** Each coil alone can drive the armature (flick test). The original series wiring is used
   first because it is how the ringer was designed to work.
 - **"90 V AC is needed."** Not as such. What is needed is enough voltage to build the current quickly in a short pulse,
-  which comes out at about 120 to 200 V DC in pulses.
+  which comes out at about 150 to 160 V DC in pulses.
 
 ## 3. What we want
 
@@ -144,9 +144,9 @@ combination rang at all") was therefore a driver or supply fault, not the bell.
         │
    XL6019 boost module (already owned), set to 10 V
         │
-   MAX1771 nixie boost module, 5-12 V in, 150-220 V out (set 150 V to start)
+   MAX1771 nixie boost module, 5-12 V in, 150-220 V out (set 150 V; 160 V at most)
         │
-   HV rail ──┬── C1 150 µF / 450 V ──┬── R_bleed (2 × 100 kΩ, ½ W, in series) ── GND
+   HV rail ──┬── C1 150 µF / 450 V ──┬── R_bleed (2 × 100 kΩ in series) ── GND
              │                        │
              │                       GND
              │
@@ -155,12 +155,12 @@ combination rang at all") was therefore a driver or supply fault, not the bell.
   U1 ch1 (SW1)            U1 ch2 (SW3)          U1, U2 = ASSR-4128 (dual PhotoMOS, 400 V, 100 mA)
      │                       │
      X ── A-black [coil A] A-yellow ═ B-yellow [coil B] B-black ── Y
-     │         D1 (P6KE150CA) from X to Y         │
+     │         Z1 (P6KE180CA) from X to Y         │
   U2 ch1 (SW2)            U2 ch2 (SW4)
      │                       │
      └───────┬───────────────┘
              │
-          R_feed 100 Ω, 1 W   (low side: fault limit and current view)
+          R_feed 100 Ω        (low side: fault limit and current view)
              │
             GND  (board GND)
 ```
@@ -169,7 +169,7 @@ combination rang at all") was therefore a driver or supply fault, not the bell.
 |---|---|---|
 | **Forward** (bell 2) | SW1 + SW4 | X (A-black) +, Y (B-black) − |
 | **Reverse** (bell 1) | SW3 + SW2 | Y (B-black) +, X (A-black) − |
-| Off | none | coil current decays through D1 |
+| Off | none | coil current decays through Z1 |
 
 ### 4.2 Power chain
 
@@ -182,10 +182,10 @@ combination rang at all") was therefore a driver or supply fault, not the bell.
   adjustable 150 to 220 V. Its **SHDN** pin is active-high on the chip (high = off). Leave it at the "on" level with no
   GPIO (check which level that is on this board, section 6 step R1). A GPIO on SHDN, so that high voltage exists only while
   ringing, is a later upgrade if a pin frees up.
-- **C1, 150 µF / 450 V** (owned) carries the burst. At 170 V it holds about 2.2 J and can give about 1 J while sagging to
-  120 V. A 2 s burst at 1.5 to 2 W takes 3 to 4 J, so the module must also deliver during the burst. **A second 150 µF in
+- **C1, 150 µF / 450 V** (owned) carries the burst. At 160 V it holds about 1.9 J and can give about 0.8 J while sagging
+  to 120 V. A 2 s burst at 1.5 to 2 W takes 3 to 4 J, so the module must also deliver during the burst. **A second 150 µF in
   parallel** doubles the reserve if the voltage sags too far; the module then refills during the 4 s off time.
-- **R_bleed:** two 100 kΩ, ½ W resistors in series (200 kΩ; 0.14 W at 170 V; each resistor sees half the voltage). Time
+- **R_bleed:** two 100 kΩ resistors in series (200 kΩ; 0.13 W at 160 V; each resistor sees half the voltage). Time
   constant 30 s with one capacitor, 60 s with two. **Wait at least 3 minutes after unplugging, and measure before
   touching.**
 - **Budget:** about 2 W from the rail while the capacitor recharges, plus the board itself. See section 6 step R8 for the
@@ -200,19 +200,30 @@ combination rang at all") was therefore a driver or supply fault, not the bell.
   outputs sit at similar voltages. Take the pinout from the datasheet (AV02-0218EN).
 - **Why PhotoMOS:** each switch is isolated from its LED, so the high-side switches need no gate driver, bootstrap or level
   shifter. That removes the part of an H-bridge that forced the big driver chips.
-- **Worst-case switch voltage** is about the supply plus the TVS clamp (170 + about 160 V ≈ 330 V at 170 V), under the
-  400 V rating. **Keep the HV at or below about 200 V.**
+- **Worst-case switch voltage** is about the supply plus the TVS clamp: 160 + about 190 V ≈ 350 V, under the 400 V
+  rating (section 4.4).
 - **Do not substitute** Form B (normally closed) relays, triac-output "AC" or zero-cross SSRs (they never turn off on DC),
   or phototransistor optocouplers (voltage too low).
 
-### 4.4 Turn-off: the TVS
+### 4.4 Turn-off: the TVS, and the voltage window it sets
 
 When all switches open, the coils' stored energy (about 15 mJ) must go somewhere. The PhotoMOS outputs have no diode path
 for it, so without a clamp the voltage would rise until the switches break down.
 
-- **D1: P6KE150CA** (bidirectional TVS, about 150 V) directly across X and Y. It clamps both polarities and dumps the
-  energy quickly, so the current falls in a few milliseconds and the armature is released for the next stroke. That is
-  what the old DRV8825 wiring lacked if its diodes held the current up (a slow decay fights the spring's return).
+- **Z1: P6KE180CA** (bidirectional TVS) directly across X and Y. It clamps both polarities and dumps the energy quickly,
+  so the current falls in a few milliseconds and the armature is released for the next stroke. That is what the old
+  DRV8825 wiring lacked if its diodes held the current up (a slow decay fights the spring's return).
+- **Its ratings** (typical for the part; check the datasheet): standoff voltage (negligible leakage) about **154 V**,
+  breakdown **171 to 189 V**. At our tens of milliamps it clamps near the breakdown voltage, about **180 to 190 V**.
+- **Z1 sets the supply window: 150 to 160 V.**
+
+  | Limit | Why | Result |
+  |---|---|---|
+  | Z1 must stay off while driving | Z1 sees the drive voltage on every pulse: the supply minus about 5 to 10 V (two switches at 35 Ω and R_feed, at about 40 mA). That must stay below the standoff voltage. | supply ≤ about 160 V |
+  | Switches below 400 V | At turn-off an open switch sees about the supply plus the clamp voltage | 160 + about 190 ≈ 350 V: OK |
+  | MAX1771 minimum | Its output adjusts from 150 V up | supply ≥ 150 V |
+
+- The clamp voltage (about 185 V) is above the supply, so the current falls faster at turn-off than it rose.
 - It dissipates roughly 0.5 to 1 W while ringing (about 15 mJ, 40 times a second at 20 Hz), well within its rating on a
   2 s burst. Expect it to get warm.
 - **Do not use a plain flyback diode.** It would keep the current circulating for tens of milliseconds.
@@ -240,7 +251,7 @@ IO22 (GPIO_F) ──┬── 470 Ω ──►|── U1 ch1 LED (SW1) ──┬
   the HV rail through one side of the bridge. R_feed limits the current if a switch fails.
 - **Boot safety comes from the wiring:** at reset both pins float (and both read 1 at boot, `validation_log.md`
   2026-09-19), so no LED current flows. Verify in step R2.
-- **Resistor 470 Ω (changed from the 330 Ω discussed earlier).** LED current is about (3.3 − 1.3) / 470 ≈ 4.3 mA. The
+- **Resistor 470 Ω.** LED current is about (3.3 − 1.3) / 470 ≈ 4.3 mA. The
   datasheet's switching threshold is 0.5 mA, and it recommends 5 mA for full performance across temperature; at room
   temperature inside the phone 4.3 mA is ample. Each GPIO carries two LEDs (about 8.5 mA) plus the board LED on the low pin,
   keeping it under the board's **12 mA per pin** limit (`audio_kit_v2.2.md` section 2). With 330 Ω the pins would carry
@@ -254,7 +265,7 @@ IO22 (GPIO_F) ──┬── 470 Ω ──►|── U1 ch1 LED (SW1) ──┬
 
 ### 4.6 R_feed and seeing the current
 
-R_feed (100 Ω, 1 W) sits between the bottom of the bridge and GND, so every drive current passes through it:
+R_feed (100 Ω) sits between the bottom of the bridge and GND, so every drive current passes through it:
 
 - **Fault limit:** if a switch fails short with the other side's switch on, the current is limited to about 1.7 A until
   the resistor fails open. A cheap fuse.
@@ -262,15 +273,21 @@ R_feed (100 Ω, 1 W) sits between the bottom of the bridge and GND, so every dri
   GND. Put the scope ground on GND and the probe on the top of R_feed. This is not the current-amplifier problem from past
   projects: the currents here are tens of milliamps at 20 Hz, so one resistor gives volt-level signals. It is optional;
   the plan works without it.
-- The current that circulates through D1 after turn-off does not pass through R_feed, so R_feed shows only the driven
+- The current that circulates through Z1 after turn-off does not pass through R_feed, so R_feed shows only the driven
   part of each pulse.
 
 ### 4.7 Scope safety on this circuit
 
-- **Use 10x probes** on anything connected to the HV side, and check the probe's voltage rating.
+- **Probes: a pair of Hantek PP-150** (switchable x1/x10; x10: 100 MHz, 10 MΩ, about 20 pF, rated 600 V DC + peak AC;
+  x1: 6 MHz, 1 MΩ, 85 to 115 pF, rated 200 V; compensation range 20 to 40 pF).
+- **Compensate each probe before first use:** set it to x10, clip it to the scope's CAL output, and turn its trimmer until
+  the square wave has flat corners.
+- **Use x10 for anything on the HV side** (the HV rail, X, Y, the coils). The scope reads 1/10 of the real voltage, so
+  multiply the volts/div setting by 10.
+- **x1 is only for low-voltage points:** R_feed (0.1 V per mA), the LED resistors, the GPIOs, and the 12 V circuit in step R3.
 - The scope's ground clip is tied to mains earth. **Clip it only to board GND**, never to X, Y or the HV rail.
-- To see the coil voltage (X − Y): CH1 on X, CH2 on Y, both grounds on GND, then CH2 invert and ADD, if the BK 1535A has
-  those modes (look for "INV" and "ADD" on the vertical controls).
+- To see the coil voltage (X − Y): CH1 on X and CH2 on Y (both x10, both grounds on GND), then CH2 invert and ADD, if the
+  BK 1535A has those modes (look for "INV" and "ADD" on the vertical controls).
 
 ## 5. Bill of materials
 
@@ -280,13 +297,18 @@ R_feed (100 Ω, 1 W) sits between the bottom of the bridge and GND, so every dri
 | MAX1771 nixie boost module, 5-12 V in, 150-220 V out | 1 | chosen, about $10 |
 | XL6019 boost module | 1 | owned (from the DRV8825 build) |
 | Capacitor 150 µF / 450 V | 1 (2 if needed) | owned |
-| P6KE150CA bidirectional TVS | 1 (+1 spare) | to buy |
-| Resistor 100 Ω, 1 W (R_feed) | 1 | to buy |
-| Resistor 100 kΩ, ½ W (R_bleed) | 2 | to buy |
-| Resistor 470 Ω, ¼ W (LEDs) | 4 | to buy |
+| P6KE180CA bidirectional TVS (Z1) | 1 | owned |
+| Resistor 100 Ω (R_feed) | 1 | owned (kit) |
+| Resistor 100 kΩ (R_bleed) | 2 | owned (kit) |
+| Resistor 470 Ω (LEDs) | 4 | owned (kit) |
+| Hantek PP-150 scope probes, x1/x10 (section 4.7) | 2 | to buy |
 | Perfboard, DIP-8 sockets, high-voltage wire | | wire owned |
-| Resistor about 4.7 kΩ, 1 W (dummy load for step R3) | 1 | to buy or use what is on hand |
-| Resistor about 22 kΩ, 2 W or more (module load test, step R1) | 1 | to buy or use what is on hand |
+| Resistor about 4.7 kΩ (dummy load for step R3) | 1 | owned (kit) |
+| Resistors 4 × 5.6 kΩ in series, 22.4 kΩ (module load test, step R1) | 4 | owned (kit) |
+
+All resistors are through-hole, ½ W. Each is used well inside that rating: the largest steady loads are the step R1 load
+(0.25 W and about 37 V per resistor) and R_bleed (about 0.07 W and 80 V each). R_feed dissipates about 0.1 W while ringing;
+in a fault it burns open, which is its purpose.
 
 **Removed from the design:** the DRV8825 module and its nENABLE pull-up; the second XL6019 stage.
 
@@ -326,7 +348,8 @@ start from: 20 Hz, forward 12 ms, reverse 12 ms, dead 1 ms (so each direction is
    - About 150 V or more: the board is on by default. Tie SHDN to GND, or leave it as is.
    - Near 0 V: tie SHDN to GND and measure again. Still off: the board's logic is inverted; tie SHDN to its input.
 3. Set the output to **150 V** (its lowest). Note the range the pot gives.
-4. **Load test:** 22 kΩ, 2 W or more, across the output (about 7 mA, 1 W at 150 V). The output should hold within a few
+4. **Load test:** four 5.6 kΩ resistors in series (22.4 kΩ) across the output: about 6.7 mA and 1 W at 150 V, 0.25 W
+   in each resistor. The output should hold within a few
    volts. Read the bench supply's current at 4.2 V: this is the input current the board's rail will have to supply for
    about 1 W out. After a minute, check the MOSFET and inductor on both modules are warm at most, not hot.
 5. **Capacitor and bleeder:** remove the load, fit C1 and R_bleed. Power up; time how long the output takes to reach
@@ -349,7 +372,7 @@ start from: 20 Hz, forward 12 ms, reverse 12 ms, dead 1 ms (so each direction is
 
 ### R3. Bridge on low voltage, dummy load
 
-1. Wire the bridge completely (section 4.1) with **a 4.7 kΩ resistor in place of the coils**, D1 fitted, R_feed fitted.
+1. Wire the bridge completely (section 4.1) with **a 4.7 kΩ resistor in place of the coils**, Z1 fitted, R_feed fitted.
    Feed the top from the **bench supply at 12 V, current limit 25 mA** instead of the HV chain.
 2. `ring fwd 1000`: X is about 12 V above Y (multimeter across the load). `ring rev 1000`: Y above X.
 3. `ring run 20` on the scope: across R_feed, a square pulse of about 2.5 mA (0.25 V) in each half-period. With CH2
@@ -378,7 +401,8 @@ start from: 20 Hz, forward 12 ms, reverse 12 ms, dead 1 ms (so each direction is
    after.**
 2. At 150 V, repeat R4 steps 2 to 5, starting at 20 Hz with the best 55 V settings.
 3. Find the settings that give a loud, clean ring at 20 Hz. Then sweep 15 to 30 Hz with them, and record the useful range.
-4. Only if 150 V is not loud enough: raise the voltage in steps of about 20 V up to **200 V at most**, repeating step 3.
+4. Only if 150 V is not loud enough: raise the voltage to **160 V at most** (the limit set by Z1, section 4.4) and repeat
+   step 3. If that is still not enough, see section 7.5.
 5. After a 2-minute run of the US cadence, feel (with the power off and the capacitor drained) the TVS, the PhotoMOS chips,
    R_feed and both modules. Warm is fine; too hot to hold is not.
 6. Watch the HV rail on the multimeter during a 2 s burst: note how far it sags and how long it takes to recover. If it
@@ -415,7 +439,7 @@ These are the waiting items from stage 10 step 5 and stage 7 test 7.
 2. Check the board does not reset or drop USB. (On 2026-09-25 connecting the old boost converter to the battery pins once
    dropped the USB device; connect the ringer power after boot until this is understood.)
 3. **If the rail sags badly or the board resets,** the charger chip's current limit is the bottleneck. Options, in order:
-   take the XL6019's input from the board's 5 V rail (VCC5V, fed from USB through D1) instead of the charger rail; add the
+   take the XL6019's input from the board's 5 V rail (VCC5V, fed from USB through the board's D1) instead of the charger rail; add the
    second capacitor to lower the peak demand; or lower the ring voltage.
 
 **Pass:** the board runs normally through ringing and recharge.
@@ -424,7 +448,7 @@ These are the waiting items from stage 10 step 5 and stage 7 test 7.
 
 1. Build on perfboard with at least 3 mm between high-voltage and low-voltage copper, HV wire for the HV runs, and
    insulation over every HV joint.
-2. Label the board "170 V DC" near the capacitor.
+2. Label the board "160 V DC" near the capacitor.
 3. Repeat R6 and R7 inside the phone.
 4. Record the final settings (voltage, frequency, pulse widths, dead time) per region profile in `initial_design.md`.
 
@@ -452,7 +476,7 @@ pairing was not recorded against the polarity table above.
 Both blacks to the HV rail; a low-side switch on A-yellow pulls forward, and one on B-yellow pulls reverse. It needs only
 two switches, and a single coil builds force about twice as fast at the same voltage. **The catch:** while one coil is
 driven, the other acts as a transformer secondary and its free end can rise to about twice the supply plus spikes (the
-"centre-tap" effect of unipolar steppers). At 170 V that exceeds 400 V. It would need a lower supply, a TVS across each
+"centre-tap" effect of unipolar steppers). At 160 V that exceeds 400 V with spikes. It would need a lower supply, a TVS across each
 coil, or higher-voltage switches. The same ASSR-4128 parts can be rewired for it.
 
 ### 7.4 Closed-loop timing
@@ -460,6 +484,15 @@ coil, or higher-voltage switches. The same ASSR-4128 parts can be rewired for it
 The flick test showed each coil generates 2 to 3 V when the armature moves. A future version could read that back-EMF on
 an ADC pin to time each pulse to the armature's real motion. Set aside until open-loop drive is exhausted, and there are
 no spare GPIOs today.
+
+### 7.5 More than 160 V: four diodes instead of Z1
+
+If 160 V is not loud enough, replace Z1 with the standard H-bridge clamp: a diode across each switch, cathode toward the
+HV rail (X to HV, Y to HV, GND to X, GND to Y), rated at least 400 V: 1N4004 to 1N4007 (1N4007 is 1000 V; slow recovery is fine at 20 Hz). The 1N4001 to 1N4003
+(50 to 200 V) and Schottky diodes such as the 1N5817 (20 V) are not suitable. At turn-off the
+coil current flows through two diodes back into C1: the coil sees about minus the supply, so the current still falls
+quickly, and **no switch sees more than the supply plus a diode drop**. The supply can then go up to the MAX1771's 220 V,
+and the coil energy is returned to C1 instead of heating a TVS. The cost is four parts instead of one.
 
 ## 8. Open items
 
