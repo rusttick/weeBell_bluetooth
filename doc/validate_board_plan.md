@@ -794,15 +794,37 @@ partition table (1.5 MB); check the main firmware's partition table the same way
 
 **DIP:** SW3 + SW4 ON, rest OFF (final config; hook on IO13 / MTCK if stage 4 confirms).
 
+**Tool:** the `hwtest` command `dial` (`main/cmds_dial.c`; built 2026-09-20, not yet run on the hardware). Flash as in
+stage 2. `dial on` turns on the pull-ups on IO18 and IO23, reads both as the dial's rest levels (**leave the dial at
+home**), and from then on prints each digit with its pulse count, rate, break/make times, break ratio and a SUSPECT flag
+for any break or make under 3 ms; hook changes print with an edge count. `dial raw on` prints every edge with the time
+since the last one; `dial trials 100` asks for random digits and scores them (steps 2 to 4 below); `dial status` gives the
+session's shortest and longest breaks and makes.
+
+0. **Find the contacts with a meter, power off.** Dial contacts have no standard colors: with the dial at home and again
+   with the finger wheel held off home, find which pair of terminals is **closed at rest and opens on each pulse** (the
+   pulse contact, IO18) and which pair is **open at rest and closes as soon as the wheel leaves home** (the off-normal
+   contact, IO23). Note the wire colors. One side of each goes to GND, the other to its pin.
 1. **Wire the contacts** to the chosen GPIOs (stage 4): pull-ups on the dial inputs, and for the hook on IO13 / MTCK the contact between 3V3 and MTCK (active-high, R15 is the pull-down), the 10–100 Ω series resistors and, if
-   the wiring is long, small filter capacitors.
+   the wiring is long, small filter capacitors. First check with `watch 13 18 23` (after `mode 18 pu`, `mode 23 pu`) that
+   turning the dial and lifting the handset move the expected pins, then use `dial on`.
 2. **Log raw edges** with microsecond timestamps while dialing each digit 1–9 and 0. Measure the pulse rate
    (expect about 10 per second) and break/make ratio (about 60/40), and note how much your dial deviates.
 3. **Decode digits** and verify all ten, including 0 (ten pulses). Try slow and fast dialing.
-4. **Hook switch:** measure bounce; pick up and hang up repeatedly and slowly; confirm a hang-up is
+4. **Hook switch:** on hook reads 1 and off hook reads 0 (measured 2026-09-25; contact between 3V3 and MTCK). Bounce measured 2026-09-25: bursts up to 1.7 ms (closing longer than opening), so debounce 20-50 ms in firmware. Pick up and hang up repeatedly and slowly; confirm a hang-up is
    distinguished from a dial pulse (with separate contacts this is trivial).
 5. **Noise:** run these tests with the ring driver connected and powered (stage 11) to check for
    pickup on the contact lines.
+
+**Results so far (2026-09-25).** The hook and digits 1 to 0 decode correctly, at least five in a row of each, with the
+settle-then-read debounce (5 ms on the dial pins, 30 ms on the hook). This dial runs slowly: about **8 pulses per second** (not
+10), break about **62 ms**, make about **62 ms**, break ratio **50%** (not 60/40); the first break can run longer (60 to 87 ms in
+digit 1). The lead (off-normal closing to the first break) grows with the digit, from about 200 ms for 1 to about 550 ms for 0,
+and the tail (last make to off-normal opening) is about 110 ms. The contacts chatter for 0.5 to 2 ms at every change, and the
+level the ISR reads right after an edge cannot be trusted (a clean rising edge on the internal pull-up can read the old level).
+Firmware must treat edges as "something changed", wait for the pin to settle, then read the pad. **`dial trials 100`: 100 of 100 right
+(2026-09-25).** Step 5 (noise from the ring driver): the driver was wired in
+and the boost converter powered for all of this, but the driver never stepped; still to do with it ringing (stage 11).
 
 **Pass:** all digits decode correctly over 100 trials, hook detection is clean.
 
@@ -813,6 +835,9 @@ partition table (1.5 MB); check the main firmware's partition table the same way
 **Goal:** ring the bell safely and find its real resonance and voltage needs.
 
 **DIP:** SW3 + SW4 ON, rest OFF.
+
+**Tool:** the `hwtest` command `ring` (`main/cmds_ring.c`; built 2026-09-25, not yet run): `ring on [s] [Hz]`, `ring sweep 15 35`,
+`ring cadence [n] [uk]`, `ring off`, `ring status`. The Hz is the bell's output frequency; STEP is 4 times that in full step.
 
 **Safety:** this stage involves a boost converter output of up to 45 V DC. Use a current-limited bench
 supply if you have one, insulate connections, and never touch the output while it is running.
@@ -893,7 +918,7 @@ Validation is finished when every row below is **confirmed working** on the real
 | Microphone in (MAX9814), onboard mics isolated, gain chosen | 7 | |
 | SD card: mount, boot-safe, playback at 8 and 16 kHz, hundreds of files | 8 | 2026-09-20; the 50-power-cycle test skipped, accepted risk |
 | Bluetooth: pairing (Just Works: passkey entry does not work with an iPhone), calls, two-way voice | 9 | in progress: pairing, dial-out call and two-way 16 kHz voice work (2026-09-20); reconnect, incoming call, SD coexistence open |
-| Dial and hook decoding on the real contacts | 10 | |
+| Dial and hook decoding on the real contacts | 10 | 2026-09-25 (100 of 100 digits, hook clean); step 5 done with the driver wired in but idle; the test with it ringing waits for stage 11 |
 | Ring driver: frequency, voltage, cadence, boot-safe | 11 | |
 | Power: current table, battery operation, brown-out, charging | 12 | |
 | 24-hour combined soak | 13 | |

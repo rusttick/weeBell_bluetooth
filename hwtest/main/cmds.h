@@ -11,6 +11,8 @@ void register_sd_commands(void);    // sd
 void register_bt_commands(void);    // bt
 void register_eq_commands(void);    // eqp
 void register_rec_commands(void);   // rec
+void register_dial_commands(void);  // dial
+void register_ring_commands(void);  // ring
 
 // SD card (cmds_sd.c): is a card mounted (and mounted read-write if `write`)? Prints the reason if not.
 bool sd_ready(bool write);
@@ -18,6 +20,14 @@ bool sd_ready(bool write);
 // Capture the candidate pins' levels before anything configures them, then set them all to plain
 // inputs (no pulls) and start the edge-watch task. Call first thing in app_main.
 void gpio_tools_init(void);
+
+// Send the edges of these test pins to `sink` (called from the edge task, not from an interrupt), whether or not
+// `watch` is on. `sink == NULL` or `n == 0` stops it. `gpio_tools_set_pull` sets a test pin to a plain input with or
+// without the internal pull-up.
+#include <stdint.h>
+typedef void (*gpio_edge_sink_t)(int pin, int level, int64_t t_us);
+void gpio_tools_capture(const int *pins, int n, gpio_edge_sink_t sink);
+bool gpio_tools_set_pull(int pin, bool pullup);
 
 // Put the candidate pins back to plain inputs with no pulls (used after tests that touch them).
 void gpio_tools_restore_floating(void);

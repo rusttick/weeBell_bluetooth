@@ -26,6 +26,7 @@ typedef struct {
     int out_level;
     int boot_level;        // level seen at the start of app_main, before we configured anything
     bool watch;            // print its edges
+    bool capture;          // hand its edges to the capture sink (the dial decoder, cmds_dial.c)
     int64_t win_start_us;  // one-second window used to catch a pin that is only picking up noise
     uint32_t win_count;
 } pin_t;
@@ -55,6 +56,7 @@ typedef struct {
 
 static QueueHandle_t edge_q;
 static volatile uint32_t edges_dropped;
+static gpio_edge_sink_t capture_sink;
 
 static pin_t *find_pin(int num)
 {
@@ -87,7 +89,7 @@ static void IRAM_ATTR edge_isr(void *arg)
 
 static void refresh_intr(const pin_t *p)
 {
-    if (p->watch && p->mode != M_OUT) {
+    if ((p->watch || p->capture) && p->mode != M_OUT) {
         gpio_set_intr_type(p->pin, GPIO_INTR_ANYEDGE);
         gpio_intr_enable(p->pin);
     } else {
@@ -121,8 +123,11 @@ static void edge_task(void *arg)
             continue;
         }
         pin_t *p = find_pin(e.pin);
+        if (p != NULL && p->capture && capture_sink != NULL) {
+            capture_sink(e.pin, e.level, e.t_us);
+        }
         if (p == NULL || !p->watch) {
-            continue;  // left over in the queue after the watch was turned off
+            continue;  // left over in the queue after the watch was turned off, or capture only
         }
         if (e.t_us - p->win_start_us > 1000000) {
             p->win_start_us = e.t_us;
@@ -174,6 +179,33 @@ void gpio_tools_release(int pin)
     if (p != NULL) {
         apply_mode(p, M_IN, 0);
     }
+}
+
+void gpio_tools_capture(const int *capture_pins, int n, gpio_edge_sink_t sink)
+{
+    capture_sink = sink;
+    for (size_t i = 0; i < NUM_PINS; i++) {
+        pins[i].capture = false;
+    }
+    for (int i = 0; sink != NULL && i < n; i++) {
+        pin_t *p = find_pin(capture_pins[i]);
+        if (p != NULL) {
+            p->capture = true;
+        }
+    }
+    for (size_t i = 0; i < NUM_PINS; i++) {
+        refresh_intr(&pins[i]);
+    }
+}
+
+bool gpio_tools_set_pull(int pin, bool pullup)
+{
+    pin_t *p = find_pin(pin);
+    if (p == NULL) {
+        return false;
+    }
+    apply_mode(p, pullup ? M_IN_PU : M_IN, 0);
+    return true;
 }
 
 void gpio_tools_restore_floating(void)

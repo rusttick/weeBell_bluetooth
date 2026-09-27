@@ -30,6 +30,8 @@ void app_main(void)
     register_bt_commands();
     register_eq_commands();
     register_rec_commands();
+    register_dial_commands();
+    register_ring_commands();
 
     ESP_ERROR_CHECK(esp_console_start_repl(repl));
 }
