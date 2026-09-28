@@ -1,7 +1,8 @@
 # Ringer Driver, Version 2 (PhotoMOS H-bridge, 150–160 V)
 
 Replaces the DRV8825 ring driver in `doc/initial_design.md` (section "Ring driver") and the stage 11 plan in
-`doc/validate_board_plan.md`. Written 2026-09-27 from bench measurements and a design discussion on the same day.
+`doc/validate_board_plan.md`. Written 2026-09-27 from bench measurements and a design discussion on the same day. Power chain (series resistor and
+supercapacitors, section 4.2) revised 2026-09-28.
 
 **Status:** the ringer's mechanics and polarity are **measured** (section 2). The circuit (section 4) is **Proposed**:
 parts are chosen but not yet bought or built. The build plan (section 6) has not been run.
@@ -130,7 +131,8 @@ combination rang at all") was therefore a driver or supply fault, not the bell.
 | Ring trip | Ringing stops at once when the handset is lifted, even mid-pulse | `tones.md` section 4 |
 | Boot safety | Silent at power-up, reset and firmware crash | stage 11 |
 | Interference | No false dial pulses, no hook changes, no audible noise in the earpiece or microphone while ringing | stages 7 and 10 |
-| Power | From the board's USB-fed charger rail only. **No battery**: the board has no low-voltage cutoff, and a plugged-in phone is more authentic | user, 2026-09-27 |
+| Power | From the board's USB-fed charger rail only (the battery connector), through a series resistor into supercapacitors. **No battery**: the board has no low-voltage cutoff, and a plugged-in phone is more authentic. It must be safe in **any** order of plugging, unplugging and connecting, with no manual steps | user, 2026-09-27 |
+| USB current | The ringer must never draw a large surge from USB. A 1.5 F supercapacitor wired straight to the battery pins **destroyed a USB hub** | user, 2026-09-27 |
 | Construction | **Off-the-shelf modules and through-hole parts on perfboard.** No custom PCB | user |
 | GPIOs | **Two**: IO22 and IO19, the pins freed by removing the DRV8825 (STEP and nENABLE) | `audio_kit_v2.2.md` section 6 |
 | Measurement | Infer current from voltages and behavior. **No current-probe or current-amplifier project** | user |
@@ -140,15 +142,20 @@ combination rang at all") was therefore a driver or supply fault, not the bell.
 ### 4.1 Overview
 
 ```
- board charger rail (about 4.2 V)
+ board battery connector (charger rail, about 4.2 V; no battery fitted)
+        │
+   R_s: 4 × 39 Ω ½ W in parallel (9.75 Ω)       limits the current drawn from USB
+        │
+   supercap node ──── C_s: 2 × 1.5 F / 5.5 V supercapacitors in parallel (3 F) ── GND
         │
    XL6019 boost module (already owned), set to 10 V
         │
+   10 V rail ──────── C_10: 3 × 1500 µF / 16 V in parallel ── GND
+        │
    MAX1771 nixie boost module, 5-12 V in, 150-220 V out (set 150 V; 160 V at most)
         │
-   HV rail ──┬── C1 150 µF / 450 V ──┬── R_bleed (2 × 100 kΩ in series) ── GND
-             │                        │
-             │                       GND
+   HV rail ──┬── C1, C2: 2 × 150 µF / 450 V in parallel ── GND
+             │   (no separate bleeder: the module's feedback resistors drain them; measured in R1)
              │
      ┌───────┴───────────────┐
      │                       │
@@ -173,23 +180,56 @@ combination rang at all") was therefore a driver or supply fault, not the bell.
 
 ### 4.2 Power chain
 
-- **Source:** the board's battery-side charger rail (about 4.2 V), the only place USB power is reachable today. No battery
-  is fitted.
+- **Source:** the board's battery connector (the charger's battery-side rail, about 4.2 V), the only place USB power is
+  reachable without soldering to the board. No battery is fitted. **These pins do not limit the current they pass from
+  USB when their voltage is low**: a 1.5 F supercapacitor connected straight to them destroyed a USB hub (2026-09-27).
+  The path is not known (perhaps the power-path MOSFET Q1). So nothing with large capacitance may connect to them
+  directly; everything goes through R_s.
+- **R_s, the series resistor:** four 39 Ω ½ W resistors in parallel, 9.75 Ω. It sets the most the ringer can ever draw
+  from the pins: 4.2 V ÷ 9.75 Ω ≈ **0.43 A**, at plug-in with the supercapacitors empty, falling as they charge. Each
+  resistor then dissipates at most 4.2² ÷ 39 ≈ 0.45 W, for a few seconds. **Keep each resistor 39 Ω or more** (33 Ω would
+  be 0.53 W each); change the total by changing how many are in parallel (table below). R_s also shows the current: the
+  voltage across it ÷ 9.75 (1 V is about 0.1 A), measured with the multimeter.
+- **C_s, the supercapacitors:** two 1.5 F / 5.5 V (owned) in parallel, 3 F, on the supercap node. They supply the
+  ringing peaks, and R_s refills them between bursts. From 4.2 V down to 3.3 V they give ½ × 3 × (4.2² − 3.3²) ≈ **10 J**.
+  After a plug-in with them empty they take about 45 s to reach 3.3 V (time constant 9.75 Ω × 3 F ≈ 29 s).
+- **The limit this sets:** R_s can only deliver a small steady power. With the node at about 3.7 V it passes
+  (4.2 − 3.7) ÷ 9.75 ≈ 50 mA, about **0.2 W**. A burst of ringing takes more than that, and the difference comes out of
+  C_s. So the ringer can ring for a limited number of cadence cycles, then must pause while C_s refills. A rough
+  estimate: 3 to 6 J from the node per US cycle (2 s ringing, 4 s silence; section 2.3's 1.5 to 2 W while ringing, and
+  about 70 % efficiency through both modules), of which R_s supplies about 1.2 J. So C_s loses 2 to 5 J per cycle and
+  lasts **about 2 to 5 cycles (12 to 30 s)**; a call rings about 25 to 30 s before voicemail answers. R5 measures the
+  real number. When C_s runs down, the XL6019 drops out and the bell weakens; nothing is harmed
+  and the board keeps running from USB.
+
+  | R_s (39 Ω each) | Total | Most current from USB | Steady power at 3.7 V | Use |
+  |---|---|---|---|---|
+  | 4 in parallel | 9.75 Ω | 0.43 A | about 0.2 W | **start here**; safe on a bus-powered hub |
+  | 6 in parallel | 6.5 Ω | 0.65 A | about 0.28 W | on a Mac port or a 2 A adapter, if R5 needs more rings |
+  | 8 in parallel | 4.9 Ω | 0.86 A | about 0.38 W | 2 A adapter only |
+
+- **Start-up:** after a plug-in, if the MAX1771 starts charging C1 and C2 before C_s is charged, it asks for more power
+  than R_s can give, and the node can sit near the XL6019's drop-out for a while. R1 step 8 checks this. If it happens,
+  delay the MAX1771 with its SHDN pin (a resistor-capacitor delay, or a GPIO).
 - **XL6019** (owned, 3-35 V in, 5-40 V out): set to **10 V**. It is still set to about 38 V from the DRV8825 tests;
   **turn it down before connecting the MAX1771**, which is rated 5-12 V in. The MAX1771 switches an external MOSFET whose
   gate drive equals its input voltage, so 10 V gives it proper gate drive; 4.2 V directly might only half turn it on.
 - **MAX1771 nixie module** (Amazon, about $10, "DC 5V-12V to 170V 150V-220V ... MAX1771 with Off Function"): output
   adjustable 150 to 220 V. Its **SHDN** pin is active-high on the chip (high = off). Leave it at the "on" level with no
   GPIO (check which level that is on this board, section 6 step R1). A GPIO on SHDN, so that high voltage exists only while
-  ringing, is a later upgrade if a pin frees up.
-- **C1, 150 µF / 450 V** (owned) carries the burst. At 160 V it holds about 1.9 J and can give about 0.8 J while sagging
-  to 120 V. A 2 s burst at 1.5 to 2 W takes 3 to 4 J, so the module must also deliver during the burst. **A second 150 µF in
-  parallel** doubles the reserve if the voltage sags too far; the module then refills during the 4 s off time.
-- **R_bleed:** two 100 kΩ resistors in series (200 kΩ; 0.13 W at 160 V; each resistor sees half the voltage). Time
-  constant 30 s with one capacitor, 60 s with two. **Wait at least 3 minutes after unplugging, and measure before
-  touching.**
-- **Budget:** about 2 W from the rail while the capacitor recharges, plus the board itself. See section 6 step R8 for the
-  rail check.
+  ringing, is a later upgrade if a pin frees up. It would also stop the module's idle switching during calls (section
+  4.8) and could delay start-up (above).
+- **C_10, the 10 V capacitors:** three 1500 µF / 16 V (owned) in parallel, 4500 µF, on the XL6019 output. They steady
+  the MAX1771's input. They sit after R_s, so charging them never reaches USB. Remove any large capacitor from the
+  XL6019 **input** (such as the 3300 µF used before); keep its 10 µF ceramic.
+- **C1 and C2, 2 × 150 µF / 450 V** (owned) in parallel carry the burst. At 160 V they hold about 3.8 J and give about
+  1.7 J while sagging to 120 V.
+- **No separate bleeder.** The MAX1771 module's feedback resistors sit across its output and drain C1 and C2 after the
+  power goes. R1 step 6 measures how long that takes; **that time is the wait before touching anything**. If it is more
+  than about an hour, fit two 470 kΩ ½ W resistors in series across C1 (about 27 mW at 160 V; below 30 V in about 8 minutes with both capacitors).
+  C1 and C2 must stay wired directly to the module's output, never through a connector, or nothing drains them.
+- **Budget from USB:** the board itself plus at most the R_s current (0.43 A at plug-in, about 50 mA once running). See
+  section 6 step R8 for the rail check.
 
 ### 4.3 The H-bridge
 
@@ -289,6 +329,23 @@ R_feed (100 Ω) sits between the bottom of the bridge and GND, so every drive cu
 - To see the coil voltage (X − Y): CH1 on X and CH2 on Y (both x10, both grounds on GND), then CH2 invert and ADD, if the
   BK 1535A has those modes (look for "INV" and "ADD" on the vertical controls).
 
+### 4.8 Noise into the audio
+
+The codec's ADC is sensitive to its supply: a noisy USB hub raised the idle microphone noise from -81 to -20 dBFS
+(2026-09-27). The ringer can reach the audio three ways:
+
+- **Conducted back through the battery pins: handled by R_s and C_s.** They form a very slow filter. The XL6019's
+  switching ripple sees 9.75 Ω against the supercapacitors' fraction of an ohm (about 30 dB less at the pins; the 10 µF
+  ceramic takes the fastest edges), and the ringing bursts reach the board only as a slow change of a few tens of mA
+  following the cadence, far below the audio band.
+- **The MAX1771 during calls: open.** The phone never rings during a call, but the module keeps switching in short
+  bursts to top up C1 and C2, and those bursts can fall in the audio band and couple from its inductor into the
+  microphone wiring. A GPIO on SHDN would turn it off for the whole call.
+- **Ground and magnetic pickup: open.** Connect the ringer's GND at the battery connector's GND, away from the microphone
+  and line-in grounds. Route the microphone cable away from the coils, the modules and the HV wiring; twist the HV pair.
+
+R7 measures all three.
+
 ## 5. Bill of materials
 
 | Part | Qty | Status |
@@ -296,21 +353,27 @@ R_feed (100 Ω) sits between the bottom of the bridge and GND, so every drive cu
 | Broadcom ASSR-4128-002E, dual PhotoMOS, DIP-8 | 2 (+1 or 2 spare) | chosen, $3.60 each |
 | MAX1771 nixie boost module, 5-12 V in, 150-220 V out | 1 | chosen, about $10 |
 | XL6019 boost module | 1 | owned (from the DRV8825 build) |
-| Capacitor 150 µF / 450 V | 1 (2 if needed) | owned |
+| Capacitor 150 µF / 450 V (C1, C2) | 2 | owned |
+| Supercapacitor 1.5 F / 5.5 V (C_s) | 2 | owned |
+| Capacitor 1500 µF / 16 V (C_10) | 3 | owned |
+| Resistor 39 Ω (R_s; 39 Ω or more each) | 4 (up to 8, section 4.2) | kit |
 | P6KE180CA bidirectional TVS (Z1) | 1 | owned |
 | Resistor 100 Ω (R_feed) | 1 | owned (kit) |
-| Resistor 100 kΩ (R_bleed) | 2 | owned (kit) |
+| Resistor 470 kΩ (bleeder, only if R1 step 6 needs it) | 2 | kit |
 | Resistor 470 Ω (LEDs) | 4 | owned (kit) |
 | Hantek PP-150 scope probes, x1/x10 (section 4.7) | 2 | to buy |
 | Perfboard, DIP-8 sockets, high-voltage wire | | wire owned |
 | Resistor about 4.7 kΩ (dummy load for step R3) | 1 | owned (kit) |
 | Resistors 4 × 5.6 kΩ in series, 22.4 kΩ (module load test, step R1) | 4 | owned (kit) |
 
-All resistors are through-hole, ½ W. Each is used well inside that rating: the largest steady loads are the step R1 load
-(0.25 W and about 37 V per resistor) and R_bleed (about 0.07 W and 80 V each). R_feed dissipates about 0.1 W while ringing;
-in a fault it burns open, which is its purpose.
+All resistors are through-hole, ½ W. Each is used inside that rating: the largest loads are R_s at plug-in (up to 0.45 W
+each for a few seconds, then about 0.03 W), the step R1 load (0.25 W and about 37 V per resistor) and the optional
+bleeder (about 0.03 W and 80 V each). R_feed dissipates about 0.1 W while ringing; in a fault it burns open, which is its
+purpose.
 
-**Removed from the design:** the DRV8825 module and its nENABLE pull-up; the second XL6019 stage.
+**Removed from the design:** the DRV8825 module and its nENABLE pull-up; the second XL6019 stage; any large capacitor
+wired straight to the battery pins or the XL6019 input (the 3300 µF and the 1.5 F used before); the 2 × 100 kΩ R_bleed
+(replaced by the module's own drain, measured in R1).
 
 ## 6. Build and test plan
 
@@ -350,12 +413,25 @@ start from: 20 Hz, forward 12 ms, reverse 12 ms, dead 1 ms (so each direction is
 3. Set the output to **150 V** (its lowest). Note the range the pot gives.
 4. **Load test:** four 5.6 kΩ resistors in series (22.4 kΩ) across the output: about 6.7 mA and 1 W at 150 V, 0.25 W
    in each resistor. The output should hold within a few
-   volts. Read the bench supply's current at 4.2 V: this is the input current the board's rail will have to supply for
-   about 1 W out. After a minute, check the MOSFET and inductor on both modules are warm at most, not hot.
-5. **Capacitor and bleeder:** remove the load, fit C1 and R_bleed. Power up; time how long the output takes to reach
-   150 V (the charge time). Unplug and time the fall to under 30 V (expect about 50 s for one capacitor).
+   volts. Read the bench supply's current at 4.2 V: this is the chain's input current for about 1 W out. After a minute, check the MOSFET and inductor on both modules are warm at most, not hot.
+5. **XL6019 drop-out:** keep the 22.4 kΩ load. Lower the bench supply from 4.2 V in 0.1 V steps and note the input
+   voltage at which the 150 V output starts to fall (V_floor). Hold just above it for a minute and feel the MOSFETs on
+   both modules: warm is fine. V_floor is the lowest useful supercap voltage; section 4.2 assumes about 3.3 V.
+6. **HV capacitors and drain time:** remove the load, fit C1 and C2 (no bleeder) and C_10. Power up at 4.2 V and time
+   how long the output takes to reach 150 V; read the bench supply's current during that charge (the chain's full-power
+   input current). Then unplug and read the HV voltage at 0, 5, 10 and 20 minutes. The time constant is
+   τ = t ÷ ln(V0 ÷ Vt), and the time to fall below 30 V is about 1.6 × τ. **Record that time: it is the wait before
+   touching the circuit, from here on.** If it is more than about an hour, fit the 2 × 470 kΩ bleeder and measure again.
+7. **R_s and C_s alone:** C_s (both supercaps, polarity checked) behind R_s, nothing after them. Bench supply 4.2 V,
+   current limit 1 A. Just after power-up, the voltage across R_s should be close to 4.2 V (0.43 A), falling as C_s
+   charges; C_s should reach 3.3 V in about 45 s. Feel R_s: warm at most.
+8. **The whole chain through R_s,** from empty (C_s drained through a resistor first): bench supply at 4.2 V, then R_s,
+   C_s, the XL6019, C_10, the MAX1771, C1 and C2. Power up and watch the supercap node and the HV output. The node should
+   climb past V_floor and the HV should reach 150 V within a few minutes. If the node sits near V_floor for longer, the
+   MAX1771 needs a start-up delay on SHDN (section 4.2).
 
-**Pass:** 150 V holds under a 1 W load, modules warm at most, capacitor charges and bleeds down as expected.
+**Pass:** 150 V holds under a 1 W load, modules warm at most, V_floor known, the HV drain time measured and recorded,
+the chain starts from empty through R_s with the current from the supply never above about 0.45 A.
 
 ### R2. LEDs and switches, no high voltage
 
@@ -396,20 +472,25 @@ start from: 20 Hz, forward 12 ms, reverse 12 ms, dead 1 ms (so each direction is
 
 ### R5. High voltage
 
-1. Power off, wait for the bleeder, and connect the HV chain (R1) in place of the bench supply. **From here on the
-   circuit is at 150 V or more: insulate everything, one hand only, never touch it while powered or for 3 minutes
-   after.**
+1. Power off, wait the drain time measured in R1 step 6 (or discharge C1 and C2 through a resistor and check with the
+   meter), and connect the HV chain (R1, including R_s and C_s, fed from the bench supply at 4.2 V) in place of the 55 V
+   supply. **From here on the circuit is at 150 V or more: insulate everything, one hand only, never touch it while
+   powered or until the drain time has passed.**
 2. At 150 V, repeat R4 steps 2 to 5, starting at 20 Hz with the best 55 V settings.
 3. Find the settings that give a loud, clean ring at 20 Hz. Then sweep 15 to 30 Hz with them, and record the useful range.
 4. Only if 150 V is not loud enough: raise the voltage to **160 V at most** (the limit set by Z1, section 4.4) and repeat
    step 3. If that is still not enough, see section 7.5.
 5. After a 2-minute run of the US cadence, feel (with the power off and the capacitor drained) the TVS, the PhotoMOS chips,
    R_feed and both modules. Warm is fine; too hot to hold is not.
-6. Watch the HV rail on the multimeter during a 2 s burst: note how far it sags and how long it takes to recover. If it
-   sags below about 120 V, fit the second capacitor.
+6. Watch the HV rail on the multimeter during a 2 s burst: note how far it sags and how long it takes to recover.
+7. **Ring budget:** start from C_s full (the node at about 4.2 V) and run `ring cadence us 10`. Write down the supercap
+   node voltage at the end of each burst, and the voltage across R_s (÷ 9.75 = current). Count the cycles until the node
+   falls to V_floor + 0.2 V, then time how long it takes to climb back to 4 V. Fewer than about 5 cycles: shorten the
+   pulses or lower the voltage and repeat, or go to 6 resistors in R_s (section 4.2 table) if the board will run from a
+   Mac port or a 2 A adapter.
 
 **Pass:** a loud, clean two-bell ring at 20 Hz (or at the best frequency found), at a recorded voltage and pulse setting,
-with nothing hot.
+with nothing hot, and the number of cadence cycles C_s supports recorded.
 
 ### R6. Cadence, ring trip and faults
 
@@ -418,7 +499,8 @@ with nothing hot.
 2. **Ring trip:** the firmware must go to idle when the hook opens, even mid-pulse. Test with the hook contact connected
    (the dial work in stage 10 has the hook on IO13).
 3. **Firmware fault:** press RESET mid-ring. The bell stops at once and stays silent through boot.
-4. **Supply loss:** unplug USB mid-ring. The bell stops; the capacitor bleeds down.
+4. **Supply loss:** unplug USB mid-ring. The bell stops; C1 and C2 drain over the time measured in R1. (With the chain
+   on the battery pins, R8 repeats this.)
 
 **Pass:** cadences correct, lifting the handset stops the bell at once, silent through reset.
 
@@ -427,28 +509,39 @@ with nothing hot.
 These are the waiting items from stage 10 step 5 and stage 7 test 7.
 
 1. `dial trials 20` while `ring cadence us` runs: no wrong digits, no false hook changes.
-2. `mic avg 30` and `mic snr ringing` while ringing: compare with the silent figures. Listen to the earpiece too.
+2. `audio on 16000`, then `mic avg 30` in three conditions (section 4.8): the ringer chain unplugged (the baseline,
+   about -81 dBFS on a clean supply), the chain powered but idle, and `ring cadence us` running. **The idle figure is
+   the one that matters for calls**; it should be within a couple of dB of the baseline. Also `mic snr ringing`, and
+   listen to the earpiece.
 3. A Bluetooth call connected while ringing: no drops (a real incoming call rings while the link is up).
 
 **Pass:** no false digits or hook changes; no audible noise added to the earpiece or microphone.
 
 ### R8. The board's power rail
 
-1. With the whole ringer powered from the board's charger rail (not the bench supply), measure the rail with the
-   multimeter during a 2 s burst and during the capacitor recharge.
-2. Check the board does not reset or drop USB. (On 2026-09-25 connecting the old boost converter to the battery pins once
-   dropped the USB device; connect the ringer power after boot until this is understood.)
-3. **If the rail sags badly or the board resets,** the charger chip's current limit is the bottleneck. Options, in order:
-   take the XL6019's input from the board's 5 V rail (VCC5V, fed from USB through the board's D1) instead of the charger rail; add the
-   second capacitor to lower the peak demand; or lower the ring voltage.
+Use a Mac port or a USB hub you can afford to lose for this step. (A 1.5 F capacitor straight on these pins destroyed a
+hub, and on 2026-09-25 connecting the old boost converter to them dropped the USB device.)
 
-**Pass:** the board runs normally through ringing and recharge.
+1. **The pins alone:** USB plugged in, nothing on the battery connector. Measure the pin voltage (expect about 4.2 V,
+   perhaps a slow sawtooth from the charger with no battery). R_s's current figures assume 4.2 V; if the pins sit higher,
+   the plug-in current is higher in proportion.
+2. **Connect the chain through R_s,** with C_s drained first, board already running. The voltage across R_s at the
+   first moment should be about the pin voltage (0.43 A at 4.2 V). The board must not reset or drop USB.
+3. **Unplug and plug in USB** with the chain connected: from empty (C_s drained), and again right after an unplug (C_s
+   partly charged), several times each. The board boots and stays on USB every time.
+4. **Ring:** `ring cadence us 10`. Watch the supercap node and the board: the board keeps running, and the ring budget
+   matches R5 step 7.
+5. **Supply loss:** unplug USB mid-ring. The bell stops. C_s then feeds back through R_s into the board (through Q1),
+   so the board may keep running, or reset a few times, until C_s is drained. That is expected and harmless.
+
+**Pass:** the board runs normally in every plug and unplug order, through ringing and recharge, and never draws more
+than the R_s limit.
 
 ### R9. Final assembly
 
 1. Build on perfboard with at least 3 mm between high-voltage and low-voltage copper, HV wire for the HV runs, and
    insulation over every HV joint.
-2. Label the board "160 V DC" near the capacitor.
+2. Label the board "160 V DC: wait <drain time from R1> after unplugging" near C1 and C2.
 3. Repeat R6 and R7 inside the phone.
 4. Record the final settings (voltage, frequency, pulse widths, dead time) per region profile in `initial_design.md`.
 
@@ -498,9 +591,14 @@ and the coil energy is returned to C1 instead of heating a TVS. The cost is four
 
 - **Ring frequencies for regions other than the US** are not verified (`tones.md` has only the US 20 Hz). Research them
   before building the region profiles.
-- The charger rail's current limit (step R8).
+- Why the battery pins pass current from USB with no limit when their voltage is low (a 1.5 F capacitor on them
+  destroyed a hub). R_s makes the answer unnecessary, but it is not understood.
+- The ring budget: how many cadence cycles C_s supports (step R5 step 7), and whether that is enough.
+- Whether the MAX1771 needs a start-up delay on SHDN (step R1 step 8).
+- The MAX1771's idle switching during calls (section 4.8, step R7).
 - The LCR meter's equivalent-circuit mode for the 100 Hz readings, if the numbers are needed again.
-- Whether a GPIO can be found for the MAX1771 SHDN pin (high voltage only while ringing).
+- Whether a GPIO can be found for the MAX1771 SHDN pin: high voltage only while ringing, no switching noise during
+  calls, and a start-up delay, all in one.
 - Updating `initial_design.md` (Ring driver, Ring-driver power, BOM) and `validate_board_plan.md` stage 11 to point here.
 
 ## Sources

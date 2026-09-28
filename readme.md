@@ -24,15 +24,19 @@ dial 0
 dial 2
 
 
+## Test:
 
 
+hwtest is firmware with RTT interactive test commands used to incrementally build and test board components and interaction with the telephone electromechanical systems.
 
-## Release notes:
+```bash
+cd hwtest
+idf.py build
+idf.py -p /dev/cu.usbserial-0001 -b 921600 flash monitor
+```
 
-xxx
 
-
-## Building the project
+## Building the ????
 xxx
 
 The project was developed using Espressif IDF v4.4.4 and creates firmware to run on [gCore](https://github.com/danjulio/gCore).  The project is contained in the ```gcore_pots_bt``` directory.  These instructions assume that the IDF is installed and configured in a shell window (instructions at Espressif's [Getting Started](https://docs.espressif.com/projects/esp-idf/en/v4.4.4/esp32/get-started/index.html) web page).
@@ -45,6 +49,15 @@ The project ```sdkconfig``` is preconfigured with options for the project.  Thes
 ### Build
 
 xxx
+
+
+```bash
+```
+
+```bash
+```
+
+
 
 ```idf.py build```
 

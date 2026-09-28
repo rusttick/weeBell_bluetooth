@@ -299,6 +299,83 @@ static void start_task(void)
     }
 }
 
+// `loop`: live microphone-to-earpiece feedback test. Takes over the I2S output from audio_task (the tone
+// generator) the same way `sd play` does, then copies audio_read_frames() straight to audio_write_frames() a
+// few milliseconds at a time. Both go through their equalizer profiles already (eqp mic on the way in, eqp spk
+// on the way out, same as `rec` and `sd play`/tones use), so whatever `eqp mic <n>` / `eqp spk <n>` currently
+// select is what comes out.
+static volatile bool loop_run, loop_active;
+static volatile int64_t loop_until_us;   // 0 = until 'loop off'
+
+static void loop_task(void *arg)
+{
+    static int16_t buf[64 * 2];
+    loop_active = true;
+    while (loop_run && (loop_until_us == 0 || esp_timer_get_time() < loop_until_us)) {
+        int got = audio_read_frames(buf, 64, 200);      // eqp mic profile applied here
+        if (got <= 0) {
+            continue;
+        }
+        audio_write_frames(buf, got);                    // eqp spk profile applied here
+    }
+    memset(buf, 0, sizeof(buf));
+    audio_write_frames(buf, 64);                          // let the output settle to silence
+    loop_active = false;
+    vTaskDelete(NULL);
+}
+
+static int cmd_loop(int argc, char **argv)
+{
+    if (argc >= 2 && !strcmp(argv[1], "status")) {
+        printf("loop %s. Microphone profile %d (%s), earpiece profile %d (%s)\n", loop_active ? "on" : "off",
+               eq_selected(true), eq_mic_profiles[eq_selected(true)].name, eq_selected(false),
+               eq_spk_profiles[eq_selected(false)].name);
+        return 0;
+    }
+    if (argc >= 2 && !strcmp(argv[1], "off")) {
+        if (!loop_active) {
+            printf("not looping\n");
+            return 0;
+        }
+        loop_run = false;
+        while (loop_active) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        audio_source_resume();
+        printf("loop off\n");
+        return 0;
+    }
+    if (argc >= 2 && !strcmp(argv[1], "on")) {
+        if (loop_active) {
+            printf("already looping: 'loop off' first\n");
+            return 1;
+        }
+        if (!audio_on) {
+            printf("run 'audio on' first (and 'audio out spk' for the earpiece)\n");
+            return 1;
+        }
+        int secs = argc >= 3 ? atoi(argv[2]) : 0;
+        if (secs < 0 || secs > 3600) {
+            printf("usage: loop on [seconds, 0 = until 'loop off'] | off | status\n");
+            return 1;
+        }
+        loop_until_us = secs ? esp_timer_get_time() + (int64_t)secs * 1000000 : 0;
+        audio_source_pause();
+        loop_run = true;
+        xTaskCreatePinnedToCore(loop_task, "loop", 4096, NULL, 6, NULL, 1);
+        while (!loop_active) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+        printf("loop on%s. Microphone profile %d (%s), earpiece profile %d (%s). 'loop off' ends it.\n",
+               secs ? "" : ", until 'loop off'", eq_selected(true), eq_mic_profiles[eq_selected(true)].name,
+               eq_selected(false), eq_spk_profiles[eq_selected(false)].name);
+        return 0;
+    }
+    printf("usage: loop on [seconds, max 3600] | off | status\n"
+           "  live mic -> earpiece feedback test, through the eqp mic and eqp spk profiles; needs 'audio on'\n");
+    return 1;
+}
+
 static esp_err_t i2s_setup(void)
 {
     if (i2s_installed) {
@@ -806,6 +883,7 @@ void register_audio_commands(void)
         {.command = "sweep", .help = "Segmented tone sweep: sweep [start_Hz [stop_Hz [step_Hz [tone_ms [gap_ms [dBFS]]]]]] | off", .func = cmd_sweep},
         {.command = "noise", .help = "White noise: noise [RMS dBFS [seconds]] | off", .func = cmd_noise},
         {.command = "eq", .help = "Output filter: eq lp <Hz> | hp <Hz> | hs <Hz> <dB> | off", .func = cmd_eq},
+        {.command = "loop", .help = "Live mic -> earpiece feedback test: loop on [seconds] | off | status", .func = cmd_loop},
     };
     for (size_t i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++) {
         ESP_ERROR_CHECK(esp_console_cmd_register(&cmds[i]));
