@@ -9,17 +9,17 @@ are in `doc/audio_clips.md`, and their words in `voice/tts_script.txt`; tones an
 - Hanging up cancels whatever is happening and returns to idle.
 - Off-hook, the caller hears the era's dial tone. The first digit dialed selects a mode, and dial tone stops there, as
   it stopped at the first digit on a real exchange (`tones.md`, section 4). No dial tone plays inside any mode, and in
-  mode 1 the caller hears silence between the digits of the number.
+  mode 1 the caller hears silence between the digits of the number, with no second dial tone after the area code.
 - Inside a mode every digit, including `0`, is ordinary input.
 - When a mode's interaction is complete, the phone returns to dial tone as though the handset had just been picked up.
 - Hanging up or dialing a digit interrupts a clip that is playing.
 - Off-hook with nothing dialed, and in mode 1, a timeout behaves exactly as the era did for a phone left off-hook or a
   number left partly dialed (`tones.md`, section 7). In eras 1 and 3 that means waiting until the caller hangs up.
 - In the other modes, waiting is handled by the operator (see "Waiting in a mode").
-- The unassigned mode digits `7`, `8` and `9` each get a witty remark from the operator, matching the era and
-  personality, then dial tone.
-- A digit that is not valid inside a mode gets a sassy remark specific to that mode, era and personality, and the mode
+- The unassigned mode digits `7` and `8` each get a witty remark from the era's operator, then dial tone.
+- A digit that is not valid inside a mode gets a sassy remark specific to that mode and era, and the mode
   then waits for the same input again. If the caller keeps dialing invalid digits, the remarks escalate.
+- Where the era would have played a tone, the phone plays it rather than leaving silence.
 - The phone runs from USB and has no battery, so there are no battery notifications.
 
 ## Modes
@@ -33,7 +33,8 @@ are in `doc/audio_clips.md`, and their words in `voice/tts_script.txt`; tones an
 | `4` | Microphone volume |
 | `5` | Tone era |
 | `6` | Forget pairing |
-| `7`, `8`, `9` | Unassigned |
+| `7`, `8` | Unassigned |
+| `9` | Voice assistant |
 
 The operator only names each mode. A mode that needs more input gives its own instructions once entered.
 
@@ -47,13 +48,15 @@ The aim is what a real operator did when you dialed `0`. For now it reads one li
 - "Dial four to set the microphone volume."
 - "Dial five to choose the tone era."
 - "Dial six to forget the paired phone."
+- "Dial nine to speak with your telephone's assistant."
 
-The list ends with a closing line (thanks, goodbye, or "dial zero again any time"), and then the phone returns to dial
-tone. It does not read the current settings or the connection status.
+The whole list is one clip per era. It ends with a closing line (thanks, goodbye, or "dial zero again any time"),
+and then the phone returns to dial tone. It does not read the current settings or the connection status.
 
 ### 1: Place a call
 
 After the `1`, exactly 10 digits are collected, and the call is placed on the 10th digit as `1` plus those 10 digits.
+The number is not read back before dialing.
 Fewer than 10 digits followed by a stop gives silence (eras 1 and 3) or reorder after about 16 s (era 2). Ringback,
 busy and reorder are generated tones. No clips are spoken.
 
@@ -62,42 +65,77 @@ busy and reorder are generated tones. No clips are spoken.
 The phone opens a discoverable window of about 3 minutes, and the user chooses the phone in their cellphone's
 Bluetooth settings (Just Works. No passkeys). The phone announces the start, success, failure or timeout.
 
+- Only one phone can be paired. If a phone is already paired, mode 2 does not open the window: the operator says a
+  phone is already paired and it must be forgotten first (mode 6), then dial tone.
+- While the window is open, a hold scene of about 3 minutes plays, until pairing succeeds (which cuts it off) or the
+  window closes. Eras 1 and 3: the operator hunts for the caller's phone at her switchboard, one side of her
+  conversations with colleagues heard over the line. Era 2: period hold music with the recording checking in now and
+  then. Each scene repeats the pairing instruction partway through.
+- The phone is discoverable only during the pairing window, which can open only when no phone is paired, so a pairing
+  attempt can never interrupt a call.
+
 ### 3 and 4: Earpiece and microphone volume
 
 1. On entering, the phone says the label and the instruction: "Earpiece volume. Dial one for the quietest, up to nine
    for the loudest."
 2. The caller dials `1` (quietest) to `9` (loudest).
 3. The new level is applied at once. The phone then says the label, the digit and, for the earpiece, a short sample
-   sentence, all at the new level, so the confirmation is also a sample of the loudness.
+   sentence, all at the new level, so the confirmation is also a sample of the loudness. The microphone level is only
+   confirmed; there is no record-and-play-back test.
 
 ### 5: Tone era
 
-One digit selects the era: `1` US before 1965, `2` US Precise Tone Plan, `3` UK GPO. The phone says the label, the
-digit and the era's name.
+One digit selects the era: `1` US before 1965, `2` US Precise Tone Plan, `3` UK GPO.
+
+- On entering, the operator of the era set before `5` was dialed names the eras by short names: "Dial one for the
+  Switchboard Days, two for Ma Bell, or three for the Post Office."
+- After a choice, the new era's operator takes over with a longer description of her era (its time, its sounds, what
+  to expect), then dial tone.
+- Era 3 (UK GPO) stays, despite its partly verified tones; the aim is to make it work.
 
 ### 6: Forget pairing
 
 The phone asks the caller to dial `6` again to confirm ("Dial six again to unpair. Hang up to cancel."). On `6` it
-removes the bond and says the phone is unpaired. Hanging up cancels.
+removes the bond and says the phone is unpaired. Hanging up cancels. If no phone is paired, the operator says there
+is nothing to forget, then dial tone.
+
+### 9: Voice assistant
+
+Dialing `9` puts the caller through to the cellphone's voice assistant (Siri on an iPhone), as the original firmware
+did with `0`. The operator announces it in the era's style, then the phone sends the handsfree voice-recognition
+command, and the assistant is heard in the earpiece and hears the microphone. When the assistant finishes (the
+cellphone turns voice recognition off), dial tone returns; hanging up ends it. If the assistant places a call, the
+call is handled as any other call. If the cellphone does not start the assistant, the operator says so, then dial
+tone. Without a connected phone, `9` gets a remark that there is no telephone to ask.
 
 ## Dial clicks
 
-While the dial turns, the earpiece plays the dial pulses in one of three settings:
+While the dial turns, the earpiece plays the dial pulses at a level fixed by the era (a best guess at each era's
+sets; the levels are firmware constants):
 
-- **Full:** the pulses heard loudly, as on an extension phone on the same line.
-- **Faint:** soft clicks, as on sets that only attenuated them.
-- **Silent:** the earpiece muted, as the dial's off-normal contact did on most period sets.
+- **Era 1 (US before 1965): faint** soft clicks, as on the many sets that only attenuated them.
+- **Era 2 (US Precise): silent,** the earpiece muted by the dial's off-normal contact.
+- **Era 3 (UK GPO): full,** the pulses clearly heard.
+- **No SD card: silent.**
 
-Other audio in the earpiece is muted while the dial turns, in every setting, except an interruption remark (below).
+The clicks are generated in the firmware, a short pulse on each dial-pulse edge. Other audio in the earpiece is muted
+while the dial turns, except an interruption remark (see "Interruptions").
 
 ## Interruptions
 
 Dialing while the operator is speaking cuts the clip off, and the operator answers with a short remark that fits the
-era and the operator's personality. This deliberately breaks period accuracy:
+era. This deliberately breaks period accuracy:
 
 - The remark starts as soon as the dial leaves rest (the dial-in-progress contact closes), not after the digit.
 - The dial pulses, at the dial-click setting, are mixed with the remark as they arrive, not played instead of it.
-- The dialed digit works as normal, as if the operator had not been speaking.
+- The dialed digit works as normal, as if the operator had not been speaking. If the remark is still playing when the
+  digit completes, it finishes first, then the mode starts.
+- Only clips where the operator is talking at the caller trigger a remark: the operator list, the no-phone monologue
+  and the era description. (Dialing during the pairing hold scene gets the pairing mode's own invalid-digit remark,
+  since pairing takes no digits.) A prompt that asks the caller to dial (a mode's instructions, a
+  waiting remark) just stops quietly and takes the digit.
+- The first interruption after the handset is lifted gets one of the era's remarks at random; each later one steps up
+  the era's escalation (three steps, the last repeating). It resets when the handset is hung up.
 
 ## Waiting in a mode
 
@@ -124,16 +162,17 @@ caller is listening.
    (or about the missing phone), then confused, then drifting into light-hearted loneliness, now and then asking whether
    anyone is still there.
 3. **Ending.** After the last step she says a closing line, and the era's off-hook treatment follows: dial tone until
-   hang-up in eras 1 and 3 ("I'll leave the dial tone on for you, dear"), and the off-hook howler in era 2, after a
+   hang-up in eras 1 and 3 ("Putting you back on dial tone, pal"), and the off-hook howler in era 2, after a
    recorded "please hang up".
 
 Dialing changes her mood and resets the monologue:
 
-- A digit dialed after the lonely steps starts with a glad remark ("Oh! Someone's there!") before the digit acts.
+- A digit dialed after the lonely steps starts with a glad remark ("Oh! Somebody's there.") before the digit acts.
 - `1` cannot place a call without a phone: she says so, points to `2`, and the monologue restarts.
 - `0`, `2` to `6` work as usual (settings are local; forgetting works while a paired phone is away, and gives the
-  "nothing to forget" remark when none is paired). `7` to `9` get the usual unassigned remarks.
-- When a mode finishes and there is still no phone, she returns to the subject ("Now, dear, about that telephone") and
+  "nothing to forget" remark when none is paired). `7` and `8` get the usual unassigned
+  remarks, and `9` gets a remark that there is no telephone to ask.
+- When a mode finishes and there is still no phone, she returns to the subject ("So. About that phone") and
   the monologue restarts from its first step.
 - If the phone connects during the monologue, she says so and dial tone starts.
 
@@ -156,9 +195,9 @@ What the firmware can know (ESP-IDF 4.4):
 How the clips follow it:
 
 - **Pick-up with a paired phone not connected.** The phone starts a reconnect attempt at once (it also retries every
-  10 s in the background). She says she is trying ("Let me try your pocket telephone, dear"). On success she says so and
+  10 s in the background). She says she is trying ("Hang on, ringing your phone"). On success she says so and
   dial tone starts; on failure (after about 5 s) the "can't reach your telephone" monologue begins.
-- **Connected while she is speaking.** The clip is cut off and she breaks in ("Oh! There it is. You're connected."),
+- **Connected while she is speaking.** The clip is cut off and she breaks in ("Wait, got it! You're connected."),
   then dial tone. If it connects during a pause in the monologue, she says so without the break-in.
 - **Connection lost** while off-hook and not in a call, or during a call (the call ends): she says she has lost the
   telephone, and the "can't reach" monologue begins.
@@ -169,141 +208,64 @@ How the clips follow it:
 - **No network service** reported by the connected cellphone: at pick-up she says so before dial tone; dialing `1`
   gets a "still no service" remark, then dial tone. Settings still work.
 - **Forget** (mode 6) says "forgotten" only once the bond removal is confirmed.
-- Signal strength, roaming, the cellphone's battery level and its carrier name are also reported, but not used yet.
+- Signal strength, roaming, the cellphone's battery level and its carrier name are also reported, but not used.
 
 The waits (the 15 s after pairing, and the 10 s retry interval) are firmware constants.
 
 ## Settings storage and a missing SD card
 
-The settings are stored on the SD card. Without a card there are no clips and no stored settings, so the phone runs in
-a tone-only mode with fixed defaults, in which essentially only mode 1 (place a call) works.
+The settings are stored on the SD card. Without a card there are no clips and no stored settings, so the phone runs a
+minimal tone-only mode (not expected in practice, so kept simple):
+
+- **Dial tone** is distinct: the era 2 dial tone (350 + 440 Hz), interrupted 0.1 s on, 0.1 s off, so a missing card is
+  obvious at pick-up.
+- **Only mode 1 works.** Any other first digit is ignored. Without a connected phone, a completed number gets reorder.
+- **Fixed defaults** in the firmware: era 2 (US Precise Tone Plan) tones and behavior, earpiece volume 5, microphone
+  volume 5 (−15 dB), dial clicks silent, US ring cadence.
 
 ## Calls
 
 - An incoming call rings the bell (US: 2 s on, 4 s off). Lifting the handset answers and stops the ring at once.
 - Digits dialed during a call go to the cellphone as DTMF.
+- While an outgoing call is being set up, the cellphone's call audio is muted, so its own ringback and any carrier
+  announcement are not heard, and the era's ringback plays instead. It starts when the cellphone reports the far end
+  is ringing ("outgoing alerting"), or 2 s after dialing if that report never comes (a firmware constant), so there is
+  no silence where the era would have played a tone. It stops when the call is answered or ends; the call audio is
+  heard once the call is answered.
 - A call that ends unanswered gets the era's busy tone (the firmware cannot tell busy from failure).
+- When the far end hangs up (or the network drops the call) after it was answered: silence until the caller hangs up
+  in eras 1 and 3, as the caller's side held the connection in step-by-step exchanges; in era 2, silence and then the
+  era's off-hook treatment.
+
+## Call errors
+
+Errors while dialing or placing a call get era-specific handling. Each era keeps its period behavior but says what went
+wrong where that helps.
+
+What is detected:
+
+- **Impossible number,** checked by the firmware as the digits arrive: an area code or exchange (the next three digits)
+  starting with `0` or `1`, or an `N11` area code such as `411` or `911`. Caught on the digit that makes it impossible.
+- **Blocked area code:** `900` and `976` (premium rate). Caught on the third digit.
+- **The cellphone refuses to dial** (an error reply to the dial command, sometimes with a reason code). A "no service"
+  reason gets the no-service remark (see "Connection status").
+
+Once an error is caught, the remaining digits are ignored, as dialing was during busy tone. After the error clip the
+phone returns to dial tone.
+
+What the caller hears, by era:
+
+- **Era 1 (US before 1965): the intercept operator.** Calls to impossible or disconnected numbers went to a live
+  intercept operator, who asked what number you were calling and told you why it failed (Wikipedia, "Intercept
+  message"). The era 1 operator plays her.
+- **Era 2 (US Precise): a recorded intercept announcement,** preceded by the three-note Special Information Tone
+  (`tones.md`, section 2). The tone dates from about 1980, later than the start of the era, but it is the sound people
+  recognize.
+- **Era 3 (UK GPO): the number-unobtainable tone** for a few seconds, then a short line from the operator. The line
+  bends period accuracy to say what went wrong. The tone is reported, not verified (`tones.md`, section 3).
 
 ## Open issues
 
 Issue numbers are kept when an issue is resolved, so references to them stay valid.
 
-Flow:
-
-40. Mode 1, era 1: play a second dial tone after the area code? Some US offices gave one when an area code was
-    dialed, to show the distant exchange was ready (`tones.md`, section 4). It may be the dial tone between digits
-    you remember.
-
-Missing SD card:
-
-9. The fixed defaults: era, earpiece and microphone volume, dial clicks.
-10. What digits other than `1` do in tone-only mode: ignored, or a tone? Does pairing (mode 2) still work silently?
-11. Should the caller be told the card is missing (for example a distinctive tone at pick-up)?
-
-Calls:
-
-12. Read the dialed number back before calling? Only this needs the 30-clip digit set (`audio_clips.md`, "Reading digit
-    strings naturally").
-13. The cellphone refuses the call: busy tone or a clip?
-14. A blocklist of area codes (needs a "That number cannot be dialed." clip)?
-15. What plays when the far end hangs up after a call: busy tone, silence, or dial tone?
-
-Pairing and forget:
-
-16. The Bluetooth device name, which the pairing prompt has to say (`hwtest` uses `weeBell-test`).
-17. Pairing when a phone is already paired (the new one replaces it): warn first?
-18. What the caller hears during the pairing window: silence or a periodic tone?
-19. Forget with nothing paired: a clip such as "No phone is paired."?
-
-Settings:
-
-21. Microphone volume sample: a confirmation only, record and play back ("Say something after the tone."), or sidetone
-    while in the mode?
-22. Era mode: an instruction on entering ("Dial one, two or three."), and read the era names there too?
-23. Era name wording.
-24. Keep era 3 (UK)? `ringer_driver_2.md` suggests tying the eras to whatever ring frequency the bell handles well.
-
-Clips and voice:
-
-26. Operator list: one clip per line (easier to change) or one clip?
-27. Keep the 8 kHz clip bank? It was for notifications during a call, and none is left.
-28. Voice assistant (from the original firmware): keep it, and on which digit?
-29. Voice and style of the prompts (a calm period "telephone operator" was suggested).
-
-Dial clicks:
-
-30. How the caller chooses full, faint or silent: its own mode (on `7`, `8` or `9`), part of another mode, or fixed
-    by the era?
-31. The default setting (silent is the period-correct one for the caller's own phone).
-32. The click sound: generated in the firmware (a short pulse on each dial-pulse edge), or a sample taken from a
-    recording of real dialing?
-33. Clip text for the setting, if it gets its own mode: a label ("Dial clicks") and the three option names.
-
-Interruptions:
-
-34. What personality means: one operator per era, or a separate choice (a setting of its own) that works with any era?
-35. The remark is still playing when the digit completes and the mode starts to speak (for example the volume
-    instructions): cut the remark off, let it finish first, or mix the two?
-36. Which clips count as the operator speaking: only the operator list, or every spoken prompt?
-37. How many remarks per era and personality, and are they picked at random, in turn, or escalating with repeated
-    interruptions?
-38. The remark text for each era and personality. Candidates so far:
-    - US before 1965, polite switchboard operator: "One moment, please." "I'm still speaking, dear." "Patience,
-      caller."
-    - US before 1965, harried operator at a busy board: "Hold your horses!" "Say, who's in a hurry?"
-    - US Precise Tone Plan, crisp and businesslike: "Please wait for the instructions." "Your call is important."
-    - UK GPO: "I beg your pardon." "Do mind your manners, caller." "Hold the line, please."
-    - Escalating, one step per repeated interruption: "One moment, please." then "Caller, I *am* trying to help you."
-      then a sigh and silence.
-
-Operator help by era and personality:
-
-39. The operator list (dial `0`) in each era's and personality's voice. Each version keeps the six mode lines and adds
-    its own opening and closing. Clip count is not a constraint (a 64 GB card and hours of text-to-speech budget).
-    Every version should say "ten-digit" in the mode 1 line, so callers do not try 7-digit numbers. Candidates:
-
-    US before 1965, polite switchboard operator (the warm voice of the 1940s–50s Bell booklets):
-    - "Operator. Number, please? Or perhaps I can help you."
-    - "Dial one and then the ten-digit number, and I'll put your call through."
-    - "Dial two to connect your pocket telephone."
-    - "Dial three if you'd like to hear me better."
-    - "Dial four if your party can't hear you."
-    - "Dial five to change the times."
-    - "Dial six, and I'll forget your telephone was ever here."
-    - "Thank you, caller."
-
-    US before 1965, harried operator at a busy board (fast; other lines are lighting up):
-    - "Operator! Make it quick."
-    - "One and the ten-digit number to call."
-    - "Two, pairing."
-    - "Three, louder in your ear."
-    - "Four, louder for them."
-    - "Five, the era."
-    - "Six, forget the phone."
-    - "Got all that? Good."
-
-    US Precise Tone Plan, 1965 on, the recorded announcement (electronic switching sent errors to recordings, not a live
-    operator; "receiver" and "transmitter" are the period names for earpiece and microphone):
-    - "This is a recording."
-    - "To place a call, dial one, followed by the ten-digit number."
-    - "For pairing, dial two."
-    - "To adjust your receiver volume, dial three."
-    - "To adjust your transmitter volume, dial four."
-    - "To select a different era, dial five."
-    - "To remove a paired telephone, dial six."
-    - "Thank you for using the Bell System."
-
-    UK GPO, General Post Office operator (formal, a little stiff; "wireless" is the period word for radio):
-    - "Operator speaking. Which service do you require?"
-    - "To make a call, dial one and then the ten-digit number, and I shall connect you."
-    - "Dial two to pair your wireless handset."
-    - "Dial three should the line be too quiet."
-    - "Dial four should the other party not hear you."
-    - "Dial five to change the exchange."
-    - "Dial six to have me forget your telephone."
-    - "Thank you, caller."
-
-Connection status:
-
-42. Use the cellphone's battery level, signal strength or carrier name in any clip (for example the operator list
-    mentioning a low battery)?
+None at the moment.

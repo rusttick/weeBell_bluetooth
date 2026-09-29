@@ -14,9 +14,9 @@ per-clip files (`num_5.wav`) remain the fallback if the stage 8 measurement says
 
 - **File format:** 16-bit signed PCM mono WAV. One bank file `prompts.wav` plus an index `prompts.idx` whose entries
   are named by clip ID (for example `num_5`).
-- **Sample rate:** **Decided: two banks, 8 kHz and 16 kHz** (see "Two banks" below). Stage 6 (2026-09-20): no audible
-  quality difference at 1 kHz between 16, 22.05 and 44.1 kHz on the earpiece, so nothing higher is stored. Keep the
-  original recordings at their highest rate and downsample from those.
+- **Sample rate:** **16 kHz, one bank** (see "One bank, 16 kHz" below). Stage 6 (2026-09-20): no audible quality
+  difference at 1 kHz between 16, 22.05 and 44.1 kHz on the earpiece, so nothing higher is stored. Keep the original
+  recordings at their highest rate and downsample from those.
 - **Channels:** mono.
 - **Loudness:** **Proposed:** loudness-normalize every clip to **-23 LUFS** in Audacity (Loudness Normalization, mono
   treated as single channel), then hard-limit peaks at **-1 dBFS**; the earpiece volume mode (mode 3) applies on top.
@@ -25,14 +25,9 @@ per-clip files (`num_5.wav`) remain the fallback if the stage 8 measurement says
 - **Card:** FAT32, 32 GB or smaller.
 - **Fallback:** **Proposed:** a very small built-in set (or tones) for when the card is missing.
 
-Most prompts play through the earpiece while the handset is off-hook and not in a call, free of the 8 kHz call-audio
-limit. **Some notifications could play during a call**, so both an 8 kHz and a 16 kHz bank are planned ("Two banks"
-below). The only one listed, "battery low", is now obsolete (no battery), so the 8 kHz bank is only needed if another
-in-call notification is added.
-
-**Both 8 kHz and 16 kHz** (see the sample analysis below). Convert with, for example:
+Every clip plays through the earpiece outside a call, free of the 8 kHz call-audio limit. Convert with, for example:
 `ffmpeg -i in.mp3 -ar 16000 -ac 1 -sample_fmt s16 out.wav`, or on macOS without ffmpeg:
-`afconvert -f WAVE -d LEI16@16000 -c 1 -r 127 in.mp3 out.wav` (then normalize and trim); use `8000` for the other bank.
+`afconvert -f WAVE -d LEI16@16000 -c 1 -r 127 in.mp3 out.wav` (then normalize and trim).
 
 ### Single large WAV (a "bank") with an index
 
@@ -66,29 +61,12 @@ codec, then can seek straight to the next clip for spoken numbers with no gap fo
 to random clips inside a bank of the same total size, with and without fast seek. If a seek plus the first read is
 under about 20 ms, use the bank.
 
-### Two banks: 8 kHz and 16 kHz
+### One bank, 16 kHz
 
-Store **both** `prompts_8k.wav` + `prompts_8k.idx` and `prompts_16k.wav` + `prompts_16k.idx` (both fit easily). Make the
-8 kHz copy from the same normalized project by resampling offline (better than resampling in the firmware), then
-limit again at -1 dBFS and export. Generate each index from the **same label file** with that bank's rate
-(`sample = round(seconds × rate)`), so the two banks stay in step.
-
-**Choosing the bank at run time.** Pick the bank that matches the **rate the codec's I2S clock is running at** when the
-clip starts: `bank = (codec_rate == 16000) ? 16k : 8k`. The firmware already knows the rate:
-- The current firmware runs the codec at a fixed **8 kHz** and up/down-samples wide-band call audio inside
-  `audio_task`. The Bluetooth task learns the call codec from the HFP audio-state event
-  (`ESP_HF_CLIENT_AUDIO_STATE_CONNECTED` = CVSD 8 kHz, `..._CONNECTED_MSBC` = mSBC 16 kHz; see `_bt_hf_client_audio_open`).
-- **Idle** (off-hook, no call): use the 16 kHz bank, re-clocking I2S to 16 kHz first (or the 8 kHz bank if the codec is
-  left at 8 kHz).
-- **During a call** (only if a prompt is ever played then): the call's rate decides, 8 kHz for CVSD and 16 kHz for mSBC,
-  so the clip matches the codec clock and needs no resampling.
-- **Never re-clock the codec while a clip or a call's audio is playing.** Change the rate only at call start, call end
-  or when idle. Stage 9 decides whether the codec should run at 16 kHz during wide-band calls (better speech than
-  down-sampling to 8 kHz); if so the rule above already picks the right bank.
-
-**Both banks were planned** because notifications such as "battery low" could play during a call, when the codec may be
-running at 8 kHz (narrowband) or 16 kHz (wide-band). "Battery low" is now obsolete (the phone has no battery), so the
-8 kHz bank is only needed if another in-call notification is added.
+**Decided (2026-09-29): one bank only, `prompts.wav` + `prompts.idx` at 16 kHz.** The 8 kHz bank existed for
+notifications played during a call, and none is left. No clip plays during a call: clips that follow a call (for
+example "lost your telephone") start after the call audio has stopped. The firmware re-clocks the codec to 16 kHz at
+call end, before any clip, and never re-clocks while a clip or call audio is playing.
 
 ### Getting the clip boundary metadata
 
@@ -242,7 +220,8 @@ pitch, cadence and volume except for the final and pre-pause digits. Each digit 
 built from pairs (`322-2333` = `3.1 + 2|2 + 2|3 + 3.p + 2|3 + 3|3 + 3.t`). It joins more smoothly but needs four
 times the clips and exact cut points.
 
-**Proposed for this project:** replace `num_0` … `num_9` with the 30-clip set, `num_<d>_h`, `num_<d>_lh` and
+**Not needed for now (2026-09-29):** the dialed number is never read back, and confirmations are generated as whole
+sentences (`voice/tts_script.txt`), so no digit strings are joined. Kept for reference: replace `num_0` … `num_9` with the 30-clip set, `num_<d>_h`, `num_<d>_lh` and
 `num_<d>_ll`, ideally two takes each. A single digit after a label ("Earpiece volume … seven") uses the final-fall
 `_ll` clip. With a text-to-speech service, generate whole numbers written with group punctuation (for example "six
 seven two, one two eight eight.") and cut the target digits using the service's word timestamps, rather than
@@ -289,7 +268,8 @@ The final list depends on which tone profiles ship (see `tones.md`, section 10).
 | `era_2_name` | "American, standard" | B | todo |
 | `era_3_name` | "British, General Post Office" | C | todo |
 
-Era C is partial and pending (see `tones.md` and `phone_ui.md`, open issue 24).
+Era C is partial (see `tones.md`), but it stays in the design. These era clips are superseded by the era prompt and
+description lines in `voice/tts_script.txt`.
 
 ### Bluetooth pairing (mode 2)
 
@@ -323,8 +303,8 @@ clip is only needed if a different digit dialed at the prompt cancels rather tha
 ### Operator (mode 0)
 
 Dialing `0` reaches the "operator" (decided 2026-09-28). The ideal is what a real operator did when you dialed `0`; for
-now it only states each top-level mode, not nested. One clip per line (proposed), so lines can be changed or dropped
-independently. Wording is a draft; see `phone_ui.md`, "0: Operator".
+now it only states each top-level mode, not nested. **Changed (2026-09-29):** the whole list is one clip per persona,
+`op_list` in `voice/tts_script.txt`, which supersedes the per-line clips below.
 
 | ID | Text | Status |
 |---|---|---|
@@ -340,7 +320,7 @@ independently. Wording is a draft; see `phone_ui.md`, "0: Operator".
 | `op_hangup` | "Hang up at any time to cancel." | todo (optional) |
 
 `op_intro` starts the list and `op_hangup` ends it. The equalizer clips (`lbl_*_eq`, `prm_pick_eq`, `op_mode_7`,
-`op_mode_8`) are dropped: `7`, `8` and `9` are unassigned modes (2026-09-28).
+`op_mode_8`) are dropped: `7` and `8` are unassigned modes (2026-09-28); `9` is the voice assistant.
 
 ### Errors and status
 
@@ -353,21 +333,20 @@ independently. Wording is a draft; see `phone_ui.md`, "0: Operator".
 Notes:
 
 - `err_no_phone`: off-hook while Bluetooth is disconnected. A period tone may be used instead.
-- `err_bad_mode`: the first digit is an unassigned mode (`7`, `8` or `9`). Replaced by a witty remark per digit, era and
-  personality (`err_mode_7` to `err_mode_9` in `voice/tts_script.txt`).
+- `err_bad_mode`: the first digit is an unassigned mode (`7` or `8`). Replaced by a witty remark per digit and era
+  (`err_mode_7` and `err_mode_8` in `voice/tts_script.txt`).
 - `err_not_allowed`: a dialed number is blocked, only if a blocklist is added.
 
 ### Active notifications (can play during a call)
 
-Played with the bank that matches the codec's current rate (see "Two banks"). More may be added; list them here.
+None are planned; no clip plays during a call.
 
 | ID | Text | Status |
 |---|---|---|
 | `note_battery_low` | "Battery low." | n/a |
 
 `note_battery_low` is obsolete (2026-09-28): the phone has no battery and runs from USB (`ringer_driver_2.md`). No
-active notification is left. The 8 kHz bank was kept for notifications during a call; if none is added, it may not be
-needed (`phone_ui.md`, open issue 27).
+active notification is left, so the 8 kHz bank is dropped (2026-09-29).
 
 The 10-digit call rule, the incomplete-number behavior and the off-hook timeout are handled by the
 era's tones or silence (see "Behavior by era" in `initial_design.md` and `tones.md` section 7), so
@@ -380,12 +359,22 @@ tone returns (`phone_ui.md`, "Waiting in a mode"). Record a real handset being p
 phone, close-miked, about one second including the switch click.
 
 - Save the original recording as `voice/recordings/sfx_hangup.wav`, at its highest rate.
-- It goes into both banks like any other clip, with the ID `sfx_hangup`: trimmed, faded, and at a level that sits
+- It goes into the bank like any other clip, with the ID `sfx_hangup`: trimmed, faded, and at a level that sits
   naturally after the speech (not loudness-normalized like speech).
+
+**To do:** find hold music for era 2 (`sfx_hold_music_era2`). It plays under the recording's check-ins during the
+pairing window (`phone_ui.md`, "2: Bluetooth pairing"). Look for a public-domain or royalty-free instrumental in late
+1960s to 1970s easy-listening style, at least 3 minutes long or cleanly loopable. Save the original as
+`voice/recordings/sfx_hold_music_era2.wav` and note its source and licence next to it.
+
+The pairing-window hold scenes (`hold_scene`, one per persona) are assembled by hand in Audacity from the `hold_*`
+clips and the `@pause` timings in `voice/tts_script.txt`; the era 2 scene is mixed over the hold music.
 
 | ID | Sound | Status |
 |---|---|---|
 | `sfx_hangup` | the operator hanging up | todo |
+| `sfx_hold_music_era2` | era 2 hold music (find, do not record) | todo |
+| `hold_scene` | one per persona, assembled from the script | todo |
 
 ## Not needed
 

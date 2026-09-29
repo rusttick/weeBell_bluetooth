@@ -6,13 +6,16 @@
 # FORMAT
 #   #            A line starting with # is a comment and is not sent to the service.
 #   @key value   A directive. It applies to every clip line after it, until the next @persona.
-#                  @persona <name>   starts a persona section; clip IDs are unique within a persona
+#                  @persona <name>   starts a persona section (one per era: era1, era2, era3); clip IDs are unique
+#                                    within a persona
 #                  @voice <name>     the service's voice for this persona (-- until chosen)
 #                  @style <text>     delivery direction for the voice (not spoken); repeated @style lines are joined
 #   id: text     A clip. The id is everything before the first ": "; the text after it is sent to the service.
-#                The full clip name is <persona>/<id>, for example us1_polite/op_intro.
+#                The full clip name is <persona>/<id>, for example era1/op_list.
 #   --           Text of just "--" means the wording is completely unclear; the clip is skipped until it is written.
 #   [sighs]      A sound effect in square brackets, for services that support audio tags.
+#   @pause <s>   Only in a hold scene: <s> seconds of silence (or music only, in era 2) to leave after the clip above
+#                when the scene is assembled in Audacity. Not sent to the service.
 #
 # Blank lines are ignored.
 #
@@ -26,219 +29,87 @@
 #   operator says "oh" (on UK dials the letter O shares the 0 hole) and "nought" only for a quantity of nothing; the
 #   1965+ Bell System recording says "zero" (not verified; review). The same applies to any digits read in a number,
 #   for example "three five seven oh nine".
-# - Which persona speaks is set by the era and personality (doc/phone_ui.md, open issue 34). Era 1 has two candidate
-#   personalities; eras 2 and 3 have one each.
-# - Not in this file yet: dialed-number readback (open issue 12), a microphone sample (open issue 21), and the
-#   tone-only mode without an SD card (no clips by definition).
-# - Timing (seconds before each waiting remark, and between the no-phone steps) lives in the firmware, not here.
+# - One operator (persona) per era, each with its own voice, chosen by audition in the text-to-speech app: era1 the
+#   harried 1950s US switchboard operator, era2 the Bell System recording, era3 the GPO operator. The era set in mode 5
+#   decides who speaks.
+# - The tone-only mode without an SD card has no clips, the dialed number is never read back, and the microphone
+#   volume is only confirmed, never sampled by recording and playing back.
+# - Timing (seconds before each waiting remark, and between the no-phone steps) lives in the firmware, not here. The
+#   exception is the hold scenes: their pauses are part of the recording, assembled by hand.
+# - Hold scenes (hold_01, hold_02, ... with @pause lines) are generated clip by clip, then joined in Audacity with the
+#   given pauses into one clip per persona, hold_scene, about 160 to 170 s long. It plays during the pairing window, right
+#   after pair_start; pairing success cuts it off (pair_paired breaks in), and the window's timeout follows its last
+#   line. Speech lengths in the comments are estimates; adjust the pauses so the total stays under the 180 s window.
 
 
 # =====================================================================================================================
-@persona us1_polite
-@voice --
-@style A warm, unhurried 1940s-50s American switchboard operator. Kind, a little motherly, calls the caller "dear".
-# =====================================================================================================================
-
-# --- Operator list (dial 0) -----------------------------------------------------------------------------------------
-# Played in order when the caller dials 0. One line per mode; the closing line is followed by dial tone.
-op_intro: Operator. Number, please? Or perhaps I can help you.
-op_mode_1: Dial one and then the ten-digit number, and I'll put your call through.
-op_mode_2: Dial two to connect your pocket telephone.
-op_mode_3: Dial three if you'd like to hear me better.
-op_mode_4: Dial four if your party can't hear you.
-op_mode_5: Dial five to change the times.
-op_mode_6: Dial six, and I'll forget your telephone was ever here.
-op_close: Dial operator any time you need me. Thank you, caller.
-
-# --- Unassigned mode digit ------------------------------------------------------------------------------------------
-# The caller dialed 7, 8 or 9 as the first digit, which select nothing. A witty remark, then dial tone.
-err_mode_7: Seven? That line was disconnected years ago, dear. Here's your dial tone back.
-err_mode_8: Eight? Nobody's lived at eight since the war, dear. Here's your dial tone back.
-err_mode_9: Nine? Heavens, dear, nine is where I keep my knitting. Here's your dial tone back.
-
-# --- Mode 2: Bluetooth pairing --------------------------------------------------------------------------------------
-# pair_start: on entering mode 2; a discoverable window of about 3 minutes opens. "weeBell" is the Bluetooth device
-#   name the cellphone shows (not final, open issue 16).
-# pair_success / pair_failed / pair_timeout: the outcome, then dial tone.
-# pair_invalid: the caller dialed a digit during the pairing window (no digits are needed).
-pair_start: Of course. Open the Bluetooth settings on your pocket telephone and choose weeBell. I'll wait right here.
-pair_success: There you are, dear. You're connected.
-pair_failed: Oh, dear. That didn't take. Dial two to try again.
-pair_timeout: I'm afraid I couldn't find your telephone. Dial two to try again.
-pair_invalid: No need to dial, dear. Just choose me on your telephone.
-
-# --- Mode 3: Earpiece volume ----------------------------------------------------------------------------------------
-# vol_ear_prompt: on entering mode 3, the label and the instruction.
-# vol_ear_<n>: after the caller dials n (1 to 9). Played at the new level, so the whole sentence is a sample of how
-#   loud calls will sound.
-# vol_ear_invalid: the caller dialed 0, which is not a level (the first invalid digit; see "Repeated invalid digits").
-# vol_ear_wait: the first remark if nothing is dialed (3 s by default), before the shared waiting remarks.
-vol_ear_prompt: Earpiece volume. Dial one for the quietest, up to nine for the loudest.
-vol_ear_1: Earpiece volume, one. This is how your calls will sound.
-vol_ear_2: Earpiece volume, two. This is how your calls will sound.
-vol_ear_3: Earpiece volume, three. This is how your calls will sound.
-vol_ear_4: Earpiece volume, four. This is how your calls will sound.
-vol_ear_5: Earpiece volume, five. This is how your calls will sound.
-vol_ear_6: Earpiece volume, six. This is how your calls will sound.
-vol_ear_7: Earpiece volume, seven. This is how your calls will sound.
-vol_ear_8: Earpiece volume, eight. This is how your calls will sound.
-vol_ear_9: Earpiece volume, nine. This is how your calls will sound.
-vol_ear_invalid: That's the operator, dear, and you've already got me. One to nine, please.
-vol_ear_wait: How loud would you like me, dear? Just dial a number.
-
-# --- Mode 4: Microphone volume --------------------------------------------------------------------------------------
-# Same pattern as mode 3. The confirmation cannot be a sample of the caller's own voice (open issue 21), so it only
-# confirms the level.
-vol_mic_prompt: Microphone volume. Dial one for the quietest, up to nine for the loudest.
-vol_mic_1: Microphone volume, one. Your party will hear you at that level.
-vol_mic_2: Microphone volume, two. Your party will hear you at that level.
-vol_mic_3: Microphone volume, three. Your party will hear you at that level.
-vol_mic_4: Microphone volume, four. Your party will hear you at that level.
-vol_mic_5: Microphone volume, five. Your party will hear you at that level.
-vol_mic_6: Microphone volume, six. Your party will hear you at that level.
-vol_mic_7: Microphone volume, seven. Your party will hear you at that level.
-vol_mic_8: Microphone volume, eight. Your party will hear you at that level.
-vol_mic_9: Microphone volume, nine. Your party will hear you at that level.
-vol_mic_invalid: Oh? That's just me again, dear. One to nine, please.
-vol_mic_wait: Shall I turn you up, or down, dear?
-
-# --- Mode 5: Tone era -----------------------------------------------------------------------------------------------
-# era_prompt: on entering mode 5.
-# era_<n>: after the caller dials n (1 to 3): the era's number and name.
-# era_invalid: the caller dialed 4 to 9 (eras that do not exist yet).
-# era_invalid_0: the caller dialed 0.
-# era_wait: the first remark if nothing is dialed.
-era_prompt: Tone era. Dial one, two, or three.
-era_1: Tone era one. The American exchange, before nineteen sixty-five.
-era_2: Tone era two. The Bell System tone plan, from nineteen sixty-five.
-era_3: Tone era three. The British General Post Office.
-era_invalid: Oh, I don't know anything about the future, dear. One, two, or three.
-era_invalid_0: Operator? You've already got me, dear. One, two, or three.
-era_wait: Which era would you like, dear? One, two, or three?
-
-# --- Mode 6: Forget pairing -----------------------------------------------------------------------------------------
-# forget_confirm: on entering mode 6; the caller must dial 6 again.
-# forget_done: after the second 6; the bond is removed, then dial tone.
-# forget_none: on entering mode 6 when no phone is paired (open issue 19), then dial tone.
-# forget_invalid: a digit other than 6 at the confirmation.
-# forget_wait: the first remark if nothing is dialed.
-forget_confirm: Dial six again, and I'll forget your telephone. Hang up if you've changed your mind.
-forget_done: It's forgotten, dear. Your telephone was never here.
-forget_none: There's no telephone to forget, dear.
-forget_invalid: That wasn't a six, dear. Dial six to forget it, or hang up to keep it.
-forget_wait: Do you want me to forget this telephone or not, dear?
-
-# --- Repeated invalid digits (shared by all modes) ------------------------------------------------------------------
-# The first invalid digit in a mode gets that mode's own *_invalid remark. If the caller keeps dialing invalid digits,
-# these follow in order, one per repeat; after invalid_4 it repeats. After each remark the mode waits for the same
-# input again. The count resets when a valid digit is dialed or the mode ends.
-invalid_2: Oh, dear. Let's try that once more, shall we?
-invalid_3: Caller, I'm beginning to think you're doing this on purpose.
-invalid_4: Is one of the little ones playing with the telephone again?
-
-# --- Waiting in a mode (shared by modes 3 to 6) ---------------------------------------------------------------------
-# After the mode's own *_wait remark, if still nothing is dialed. Default gaps: 5 s, 7 s, 9 s. Annoyed first, then sad.
-# After wait_3 the caller hears the operator hang up, then dial tone. The hang-up is a recorded sound, sfx_hangup,
-# not in this file (see doc/audio_clips.md, "Sound effects to record").
-wait_1: Hello? I'm still here, caller.
-wait_2: Caller, I do have other lines waiting.
-wait_3: Well. I suppose nobody wants to talk to the operator. Goodbye, dear.
-
-# --- No phone connected ---------------------------------------------------------------------------------------------
-# Played instead of dial tone when the handset is lifted and no cellphone is connected (doc/phone_ui.md).
-# nophone_intro: no phone has been paired; explains pairing. nophone_intro_away: a phone is paired but cannot be
-#   reached (out of range, or Bluetooth off).
-# nophone_1 / nophone_1_away: the first follow-up if nothing is dialed, asking about pairing (or the missing phone).
-# nophone_2 to nophone_6: later steps while nothing is dialed; confused, then lonely, never truly dark.
-# nophone_final: after nophone_6, just before the era's off-hook treatment (dial tone until hang-up in eras 1 and 3;
-#   the off-hook howler in era 2).
-# nophone_glad: a digit is dialed after the lonely steps (nophone_4 on); plays before whatever the digit does.
-# nophone_call: the caller dialed 1 (place a call), which cannot work without a phone. The monologue then restarts.
-# nophone_back: a mode finished and the phone is still not connected; the monologue restarts after this line.
-# nophone_connected: the phone connects during the monologue; then dial tone.
-nophone_intro: Operator. I'm not connected to a telephone just yet. Dial two, and choose weeBell in your pocket telephone's Bluetooth settings.
-nophone_intro_away: Operator. I can't seem to reach your pocket telephone, dear. Is it nearby, with its Bluetooth turned on? I'll keep trying.
-nophone_1: Hello? Did you want to connect a telephone, dear? Just dial two.
-nophone_1_away: Hello? Is your telephone nearby, dear? I'm still trying to reach it.
-nophone_2: Is anyone there?
-nophone_3: It's awfully quiet on this line.
-nophone_4: I do get lonely in here, you know. Not a single call all day.
-nophone_5: Hello? Anyone at all?
-nophone_6: I'll just wait here, then. I'm very good at waiting.
-nophone_final: I'll leave the dial tone on for you, dear. Just dial operator if you need me.
-nophone_glad: Oh! Someone's there! How lovely.
-nophone_call: I'd love to put a call through, dear, but there's no telephone to put it through. Dial two to connect one.
-nophone_back: Now, dear, about that telephone.
-nophone_connected: Oh, there's your telephone now. Go right ahead.
-
-# --- Connection status --------------------------------------------------------------------------------------------
-# Follows what the Bluetooth stack reports (doc/phone_ui.md, "Connection status"). Lines marked "breaks in" cut off
-# whatever clip is playing, like a dialing interruption.
-# conn_try: pick-up with a paired phone that is not connected; a reconnect attempt starts.
-# conn_try_ok: that attempt succeeded; then dial tone. (If it fails, nophone_intro_away follows.)
-# conn_ok_interrupt: breaks in when the phone connects while another clip is playing; then dial tone. (During a pause in
-#   the no-phone monologue, nophone_connected is used instead.)
-# conn_lost: the connection dropped while off-hook, or during a call; then the no-phone monologue (away version).
-# pair_paired: breaks in (or follows pair_start) when pairing succeeds; the phone is still connecting. pair_success
-#   follows once it is ready.
-# pair_noconn: paired, but the phone did not connect within 15 s; then the no-phone monologue (away version).
-# noservice: at pick-up, the connected cellphone reports no network service; then dial tone.
-# noservice_call: the caller dialed 1 while there is no service; then dial tone.
-conn_try: Let me try your pocket telephone, dear.
-conn_try_ok: There you are. Go right ahead.
-conn_ok_interrupt: Oh! There it is. You're connected, dear.
-conn_lost: Oh, dear. I've lost your telephone.
-pair_paired: Oh, it's paired! Just a moment while it connects.
-pair_noconn: It's paired, dear, but it won't connect. Is its Bluetooth still turned on?
-noservice: Your pocket telephone has no service just now, dear. I can't put calls through until it does.
-noservice_call: I'm sorry, dear, your telephone still has no service. Try again in a little while.
-
-# --- Interruptions --------------------------------------------------------------------------------------------------
-# The caller starts dialing while the operator is speaking. Plays at once, mixed with the dial clicks; the digit still
-# works as normal.
-# intr_1 to intr_3: picked at random.
-# intr_esc_1 to intr_esc_3: used instead if the caller keeps interrupting, one step per repeat (open issue 37).
-intr_1: One moment, please.
-intr_2: I'm still speaking, dear.
-intr_3: Patience, caller.
-intr_esc_1: One moment, please.
-intr_esc_2: Caller, I am trying to help you.
-intr_esc_3: [sighs]
-
-
-# =====================================================================================================================
-@persona us1_harried
+@persona era1
 @voice --
 @style A fast, clipped American operator at a busy 1940s-50s switchboard. Other lines are lighting up. Calls the
 @style caller "pal". Impatient but not mean.
 # =====================================================================================================================
 
 # --- Operator list (dial 0) -----------------------------------------------------------------------------------------
-# Played in order when the caller dials 0. One line per mode; the closing line is followed by dial tone.
-op_intro: Operator! Make it quick.
-op_mode_1: One and the ten-digit number to call.
-op_mode_2: Two, pairing.
-op_mode_3: Three, louder in your ear.
-op_mode_4: Four, louder for them.
-op_mode_5: Five, the era.
-op_mode_6: Six, forget the phone.
-op_close: Got all that? Good. Dial operator if you need me.
+# op_list: the whole list, one clip, played when the caller dials 0; followed by dial tone.
+op_list: Operator! Make it quick. One and the ten-digit number to call. Two, pairing. Three, louder in your ear. Four, louder for them. Five, the era. Six, forget the phone. Nine, the assistant. Got all that? Good. Dial operator if you need me.
 
 # --- Unassigned mode digit ------------------------------------------------------------------------------------------
-# The caller dialed 7, 8 or 9 as the first digit, which select nothing. A witty remark, then dial tone.
+# The caller dialed 7 or 8 as the first digit, which select nothing. A witty remark, then dial tone.
 err_mode_7: Seven? Lucky number, wrong phone. Try again.
 err_mode_8: Eight? Nobody home on eight, pal. Try again.
-err_mode_9: Nine? Nothing on nine, pal. Try again.
 
 # --- Mode 2: Bluetooth pairing --------------------------------------------------------------------------------------
-# pair_start: on entering mode 2; a discoverable window of about 3 minutes opens. "weeBell" is the device name.
+# pair_start: on entering mode 2; a discoverable window of about 3 minutes opens. "Kellogg Switchboard" is the
+#   Bluetooth device name.
 # pair_success / pair_failed / pair_timeout: the outcome, then dial tone.
 # pair_invalid: the caller dialed a digit during the pairing window.
-pair_start: Pairing. Open Bluetooth on your phone, pick weeBell. Go on, I'm timing you.
+# pair_already: mode 2 while a phone is already paired; no window opens, then dial tone.
+pair_start: Pairing. Open Bluetooth on your phone, pick Kellogg Switchboard. Go on, I'm timing you.
 pair_success: Paired. Next!
 pair_failed: Didn't take. Dial two, try again.
 pair_timeout: Too slow. Dial two if you want another go.
 pair_invalid: Don't dial, pal. Pick me on your phone.
+pair_already: Already got a phone paired, pal. Dial six to forget it first.
+
+# --- Pairing window hold scene --------------------------------------------------------------------------------------
+# During the ~3-minute pairing window. A busy 1950s board: she hunts for the caller's phone while other lines keep
+# lighting up ("Number, please?"), with her neighbour Sadie and a lost-and-found box. The other sides are never heard;
+# the pauses are where they answer. About 66 s of speech and 100 s of pauses, about 166 s in all.
+hold_01: Hold on, I'll find your phone. Don't go nowhere.
+@pause 3
+hold_02: Number, please? Hold on.
+@pause 4
+hold_03: Number, please? Brooklyn? Hold on.
+@pause 4
+hold_04: Okay, your phone. Where'd you leave it? Don't tell me, I'm busy.
+@pause 4
+hold_05: Sadie! You seen a phone come through that fits in a pocket? A pocket!
+@pause 5
+hold_06: She says try the lost and found. We got a lost and found? Since when?
+@pause 6
+hold_07: Number, please? No, this ain't the weather. Hold on.
+@pause 5
+hold_08: Lost and found. Umbrella, umbrella, one glove, a hat... a bowling ball? Who loses a bowling ball?
+@pause 5
+hold_09: No phone, pal. You sure it's switched on?
+@pause 6
+hold_10: Number, please? Mister, I got a fella here looking for his own phone. You're gonna have to wait.
+@pause 5
+hold_11: Supervisor's coming. Look busy. I am busy!
+@pause 6
+hold_12: Okay, listen. On your phone, the Bluetooth. Pick Kellogg Switchboard. That's me. Tap it.
+@pause 7
+hold_13: Tap it! What, you need an engraved invitation?
+@pause 7
+hold_14: Number, please? Hold on. Everybody's holding today.
+@pause 7
+hold_15: Sadie says it's probably in the couch cushions. It's always the couch cushions.
+@pause 8
+hold_16: Still nothing. My feet hurt, pal.
+@pause 9
+hold_17: Board's lighting up like Christmas over here.
+@pause 9
+hold_18: Last call, pal. Tap Kellogg Switchboard, or I'm moving on.
 
 # --- Mode 3: Earpiece volume ----------------------------------------------------------------------------------------
 # vol_ear_prompt: on entering mode 3. vol_ear_<n>: after dialing n, played at the new level as a sample.
@@ -272,12 +143,14 @@ vol_mic_invalid: Operator? You got me already. One to nine.
 vol_mic_wait: Up or down? I got lines waiting.
 
 # --- Mode 5: Tone era -----------------------------------------------------------------------------------------------
-# era_prompt: on entering mode 5. era_<n>: after dialing n. era_invalid: 4 to 9. era_invalid_0: 0.
+# era_prompt: on entering mode 5, spoken by the era set before the caller dialed 5. Names the three eras by their
+#   short names: 1 the Switchboard Days, 2 Ma Bell, 3 the Post Office.
+# era_desc: after an era is chosen, spoken by the persona of the NEW era: a longer welcome to this persona's own era.
+#   (Each persona only ever describes its own era.)
+# era_invalid: the caller dialed 4 to 9. era_invalid_0: the caller dialed 0.
 # era_wait: the first remark if nothing is dialed.
-era_prompt: Tone era. One, two, or three. Go.
-era_1: Era one. The old American exchange.
-era_2: Era two. The Bell System tone plan.
-era_3: Era three. The British Post Office. Cheerio.
+era_prompt: Era. One, Switchboard Days. Two, Ma Bell. Three, the Post Office. Go.
+era_desc: Switchboard Days, pal. Forties, fifties, cords everywhere, and me running the whole board. Dial tone hums, busy buzzes, and nobody hurries you off the line. Except me.
 era_invalid: No such era, pal. One, two, or three.
 era_invalid_0: Operator? I'm right here, pal. One, two, or three.
 era_wait: Which era? One, two, three. Any time now.
@@ -290,6 +163,14 @@ forget_done: Forgotten. Never heard of it.
 forget_none: Nothing to forget, pal.
 forget_invalid: That's no six. Six, or hang up.
 forget_wait: You wanna forget this phone or what?
+
+# --- Mode 9: Voice assistant ---------------------------------------------------------------------------------------
+# va_start: on dialing 9; then the cellphone's assistant (Siri) is heard. Dial tone when it finishes.
+# va_failed: the cellphone did not start its assistant; then dial tone.
+# va_nophone: 9 dialed while no phone is connected; then the no-phone monologue restarts.
+va_start: Hold on, putting you through to the assistant. Talk to her, not me.
+va_failed: Assistant's not picking up, pal.
+va_nophone: Assistant? What assistant? You got no phone hooked up.
 
 # --- Repeated invalid digits (shared by all modes) ------------------------------------------------------------------
 # The first invalid digit in a mode gets that mode's own *_invalid remark. If the caller keeps dialing invalid digits,
@@ -317,7 +198,7 @@ wait_3: Fine. Nobody ever stays on the line. Goodbye.
 # nophone_call: the caller dialed 1 (place a call), which cannot work without a phone. The monologue then restarts.
 # nophone_back: a mode finished and the phone is still not connected; the monologue restarts after this line.
 # nophone_connected: the phone connects during the monologue; then dial tone.
-nophone_intro: Operator. No phone hooked up. Dial two and pick weeBell on your phone. Let's go.
+nophone_intro: Operator. No phone hooked up. Dial two and pick Kellogg Switchboard on your phone. Let's go.
 nophone_intro_away: Operator. Can't raise your phone, pal. Bluetooth on? I'll keep ringing it.
 nophone_1: Hey. You gonna pair a phone or what? Dial two.
 nophone_1_away: Still can't raise your phone. It in the other room or what?
@@ -331,6 +212,18 @@ nophone_glad: Oh! Somebody's there. Okay, okay.
 nophone_call: Call who? On what? You got no phone hooked up. Dial two.
 nophone_back: So. About that phone.
 nophone_connected: There's your phone. Go ahead.
+
+# --- Call errors (mode 1) ------------------------------------------------------------------------------------------
+# doc/phone_ui.md, "Call errors". Remaining digits are ignored; after the clip, dial tone.
+# call_bad_area: the area code is impossible (starts with 0 or 1, or is an N11 code such as 411).
+# call_bad_exchange: the exchange (digits 4 to 6) starts with 0 or 1.
+# call_blocked: the area code is blocked (900 or 976, premium rate).
+# call_refused: the cellphone refused to dial, for a reason other than no service (that uses noservice_call).
+# Era 1: spoken as the intercept operator.
+call_bad_area: What number you calling? No such area code, pal. Check it and dial again.
+call_bad_exchange: That number's no good, pal. Check it and dial again.
+call_blocked: Pay-by-the-minute numbers? Not on my board, pal.
+call_refused: Your phone won't take the call, pal. Try again.
 
 # --- Connection status --------------------------------------------------------------------------------------------
 # Follows what the Bluetooth stack reports (doc/phone_ui.md, "Connection status"). Lines marked "breaks in" cut off
@@ -355,7 +248,9 @@ noservice: Your phone's got no service, pal. No calls till it does.
 noservice_call: Still no service. Try later.
 
 # --- Interruptions --------------------------------------------------------------------------------------------------
-# The caller starts dialing while the operator is speaking. intr_*: at random. intr_esc_*: on repeated interruptions.
+# The caller starts dialing while the operator is talking at them (operator list, no-phone monologue, era
+# description). intr_*: the first interruption since pick-up, at random. intr_esc_*: each later one, in order; the
+# last repeats. The remark finishes before the dialed mode starts.
 intr_1: Hold your horses!
 intr_2: Say, who's in a hurry?
 intr_3: Hey, I'm talking here!
@@ -365,38 +260,48 @@ intr_esc_3: [sighs]
 
 
 # =====================================================================================================================
-@persona us2_recording
+@persona era2
 @voice --
 @style A 1960s-70s Bell System recorded announcement: measured, formal, precise diction, faintly mechanical. The joke
 @style is that the recording slowly shows feelings.
 # =====================================================================================================================
 
 # --- Operator list (dial 0) -----------------------------------------------------------------------------------------
-# Played in order when the caller dials 0. "Receiver" and "transmitter" are the period names for earpiece and
-# microphone. The closing line is followed by dial tone.
-op_intro: This is a recording.
-op_mode_1: To place a call, dial one, followed by the ten-digit number.
-op_mode_2: For pairing, dial two.
-op_mode_3: To adjust your receiver volume, dial three.
-op_mode_4: To adjust your transmitter volume, dial four.
-op_mode_5: To select a different era, dial five.
-op_mode_6: To remove a paired telephone, dial six.
-op_close: For assistance, dial zero at any time. Thank you for using the Bell System.
+# op_list: the whole list, one clip, played when the caller dials 0; followed by dial tone. "Receiver" and
+# "transmitter" are the period names for earpiece and microphone.
+op_list: This is a recording. To place a call, dial one, followed by the ten-digit number. For pairing, dial two. To adjust your receiver volume, dial three. To adjust your transmitter volume, dial four. To select a different era, dial five. To remove a paired telephone, dial six. To reach your telephone's voice assistant, dial nine. For assistance, dial zero at any time. Thank you for using the Bell System.
 
 # --- Unassigned mode digit ------------------------------------------------------------------------------------------
-# The caller dialed 7, 8 or 9 as the first digit, which select nothing. A witty remark, then dial tone.
+# The caller dialed 7 or 8 as the first digit, which select nothing. A witty remark, then dial tone.
 err_mode_7: We're sorry. Your call cannot be completed as dialed. Please check the instructions and dial again.
 err_mode_8: We're sorry. The selection you have dialed, eight, has been disconnected or is no longer in service.
-err_mode_9: We're sorry. The selection you have dialed, nine, is not in service. Please check the instructions and dial again.
 
 # --- Mode 2: Bluetooth pairing --------------------------------------------------------------------------------------
 # pair_start: on entering mode 2. pair_success / pair_failed / pair_timeout: the outcome, then dial tone.
 # pair_invalid: the caller dialed a digit during the pairing window.
-pair_start: Pairing is now in progress. Please select weeBell in the Bluetooth settings of your telephone.
+# pair_already: mode 2 while a phone is already paired; no window opens, then dial tone.
+pair_start: Pairing is now in progress. Please select Kellogg Switchboard in the Bluetooth settings of your telephone.
 pair_success: Pairing is complete.
 pair_failed: We're sorry. Pairing could not be completed. Please dial two to try again.
 pair_timeout: We're sorry. The pairing period has expired. Please dial two to try again.
 pair_invalid: We're sorry. Dialing is not required at this time.
+pair_already: We're sorry. A telephone is already paired. To pair a different telephone, first dial six to remove it.
+
+# --- Pairing window hold scene --------------------------------------------------------------------------------------
+# During the ~3-minute pairing window. Era 2 plays hold music (sfx_hold_music_era2, still to be found; see
+# doc/audio_clips.md) under these recorded check-ins. Each @pause is music only. About 25 s of speech and 145 s of
+# music, 170 s in all.
+@pause 20
+hold_01: Please continue to hold. Your pairing is important to us.
+@pause 25
+hold_02: To pair your telephone, select Kellogg Switchboard in its Bluetooth settings.
+@pause 25
+hold_03: All of our Bluetooth is currently busy. Please continue to hold.
+@pause 25
+hold_04: Your estimated wait time is: less than three minutes.
+@pause 25
+hold_05: This recording is still here. So is the music.
+@pause 25
 
 # --- Mode 3: Earpiece volume ----------------------------------------------------------------------------------------
 # vol_ear_prompt: on entering mode 3. vol_ear_<n>: after dialing n, played at the new level as a sample.
@@ -430,12 +335,14 @@ vol_mic_invalid: We're sorry. Zero is not a valid level. Please dial one through
 vol_mic_wait: Please dial your transmitter volume now.
 
 # --- Mode 5: Tone era -----------------------------------------------------------------------------------------------
-# era_prompt: on entering mode 5. era_<n>: after dialing n. era_invalid: 4 to 9. era_invalid_0: 0.
+# era_prompt: on entering mode 5, spoken by the era set before the caller dialed 5. Names the three eras by their
+#   short names: 1 the Switchboard Days, 2 Ma Bell, 3 the Post Office.
+# era_desc: after an era is chosen, spoken by the persona of the NEW era: a longer welcome to this persona's own era.
+#   (Each persona only ever describes its own era.)
+# era_invalid: the caller dialed 4 to 9. era_invalid_0: the caller dialed 0.
 # era_wait: the first remark if nothing is dialed.
-era_prompt: Era selection. Dial one, two, or three.
-era_1: Era one has been selected: the American exchange, before nineteen sixty-five.
-era_2: Era two has been selected: the Bell System Precise Tone Plan.
-era_3: Era three has been selected: the British General Post Office.
+era_prompt: Era selection. For the Switchboard Days, dial one. For Ma Bell, dial two. For the Post Office, dial three.
+era_desc: You have selected Ma Bell: the Bell System Precise Tone Plan, from nineteen sixty-five. Dial tone, busy signals and ringing now follow the modern standard. Please note: if you leave the receiver off the hook, this recording will eventually object.
 era_invalid: We're sorry. The era you have dialed is not in service.
 era_invalid_0: We're sorry. Era zero is not in service. Please dial one, two, or three.
 era_wait: Please dial your era selection now.
@@ -448,6 +355,14 @@ forget_done: Your paired telephone has been removed.
 forget_none: We're sorry. There is no paired telephone to remove.
 forget_invalid: We're sorry. Your entry was not recognized. To remove your telephone, dial six. To cancel, hang up.
 forget_wait: Please dial six to confirm. Or don't. This recording can wait.
+
+# --- Mode 9: Voice assistant ---------------------------------------------------------------------------------------
+# va_start: on dialing 9; then the cellphone's assistant (Siri) is heard. Dial tone when it finishes.
+# va_failed: the cellphone did not start its assistant; then dial tone.
+# va_nophone: 9 dialed while no phone is connected; then the no-phone monologue restarts.
+va_start: Please wait while you are connected to your telephone's voice assistant.
+va_failed: We're sorry. Your telephone's voice assistant is not available at this time.
+va_nophone: We're sorry. The voice assistant cannot be reached without a telephone. To pair a telephone, dial two.
 
 # --- Repeated invalid digits (shared by all modes) ------------------------------------------------------------------
 # The first invalid digit in a mode gets that mode's own *_invalid remark. If the caller keeps dialing invalid digits,
@@ -490,6 +405,18 @@ nophone_call: We're sorry. Your call cannot be completed without a telephone. To
 nophone_back: This recording would like to return to the subject of pairing.
 nophone_connected: Your telephone is now connected.
 
+# --- Call errors (mode 1) ------------------------------------------------------------------------------------------
+# doc/phone_ui.md, "Call errors". Remaining digits are ignored; after the clip, dial tone.
+# call_bad_area: the area code is impossible (starts with 0 or 1, or is an N11 code such as 411).
+# call_bad_exchange: the exchange (digits 4 to 6) starts with 0 or 1.
+# call_blocked: the area code is blocked (900 or 976, premium rate).
+# call_refused: the cellphone refused to dial, for a reason other than no service (that uses noservice_call).
+# Era 2: played after the Special Information Tone (generated, not in this file).
+call_bad_area: We're sorry. Your call cannot be completed as dialed. The area code you have dialed does not exist. Please check the number and dial again.
+call_bad_exchange: We're sorry. Your call cannot be completed as dialed. Please check the number and dial again.
+call_blocked: We're sorry. Calls to this area code are not permitted from this telephone.
+call_refused: We're sorry. Your call cannot be completed at this time. Please try your call again later.
+
 # --- Connection status --------------------------------------------------------------------------------------------
 # Follows what the Bluetooth stack reports (doc/phone_ui.md, "Connection status"). Lines marked "breaks in" cut off
 # whatever clip is playing, like a dialing interruption.
@@ -513,7 +440,9 @@ noservice: We're sorry. Your telephone is not receiving service at this time.
 noservice_call: We're sorry. Your call cannot be completed. Your telephone has no service.
 
 # --- Interruptions --------------------------------------------------------------------------------------------------
-# The caller starts dialing while the recording is playing. intr_*: at random. intr_esc_*: on repeated interruptions.
+# The caller starts dialing while the operator is talking at them (operator list, no-phone monologue, era
+# description). intr_*: the first interruption since pick-up, at random. intr_esc_*: each later one, in order; the
+# last repeats. The remark finishes before the dialed mode starts.
 intr_1: Please wait for the instructions.
 intr_2: Please do not dial during this recording.
 intr_3: Your call is important to us.
@@ -523,7 +452,7 @@ intr_esc_3: [sighs]
 
 
 # =====================================================================================================================
-@persona uk_gpo
+@persona era3
 @voice --
 @style A formal 1950s British General Post Office operator, received pronunciation, polite and a little stiff. Says
 @style "caller", "oh" for the dial's 0 (the letter O shares its hole), "nought" only for a quantity of nothing, and
@@ -531,30 +460,62 @@ intr_esc_3: [sighs]
 # =====================================================================================================================
 
 # --- Operator list (dial 0) -----------------------------------------------------------------------------------------
-# Played in order when the caller dials 0. The closing line is followed by dial tone.
-op_intro: Operator speaking. Which service do you require?
-op_mode_1: To make a call, dial one and then the ten-digit number, and I shall connect you.
-op_mode_2: Dial two to pair your wireless handset.
-op_mode_3: Dial three should the line be too quiet.
-op_mode_4: Dial four should the other party not hear you.
-op_mode_5: Dial five to change the exchange.
-op_mode_6: Dial six to have me forget your telephone.
-op_close: Dial oh for the operator at any time should you need me. Thank you, caller.
+# op_list: the whole list, one clip, played when the caller dials 0; followed by dial tone.
+op_list: Operator speaking. Which service do you require? To make a call, dial one and then the ten-digit number, and I shall connect you. Dial two to pair your wireless handset. Dial three should the line be too quiet. Dial four should the other party not hear you. Dial five to change the exchange. Dial six to have me forget your telephone. Dial nine to speak with your handset's assistant. Dial oh for the operator at any time should you need me. Thank you, caller.
 
 # --- Unassigned mode digit ------------------------------------------------------------------------------------------
-# The caller dialed 7, 8 or 9 as the first digit, which select nothing. A witty remark, then dial tone.
+# The caller dialed 7 or 8 as the first digit, which select nothing. A witty remark, then dial tone.
 err_mode_7: Seven, caller? I'm afraid that service was withdrawn some time ago.
 err_mode_8: I'm afraid there is no service on eight, caller. Do try something sensible.
-err_mode_9: I'm afraid there is no service on nine, caller. Nine is for emergencies, and this is hardly one.
 
 # --- Mode 2: Bluetooth pairing --------------------------------------------------------------------------------------
 # pair_start: on entering mode 2. pair_success / pair_failed / pair_timeout: the outcome, then dial tone.
 # pair_invalid: the caller dialed a digit during the pairing window.
-pair_start: Very good. Kindly select weeBell in the Bluetooth settings of your wireless handset. I shall wait.
+# pair_already: mode 2 while a phone is already paired; no window opens, then dial tone.
+pair_start: Very good. Kindly select Kellogg Switchboard in the Bluetooth settings of your wireless handset. I shall wait.
 pair_success: You are connected. Thank you, caller.
 pair_failed: I'm afraid the connection has failed. Dial two to try again.
 pair_timeout: I'm afraid I was unable to find your handset. Dial two to try again.
 pair_invalid: There's no need to dial, caller. Kindly use your handset.
+pair_already: A telephone is already paired, caller. Kindly dial six to have me forget it first.
+
+# --- Pairing window hold scene --------------------------------------------------------------------------------------
+# During the ~3-minute pairing window. The GPO exchange: she makes enquiries about the caller's "wireless handset" with
+# Mr. Higgins the engineer, Directory Enquiries and the trunk exchange, with the kettle on. The other sides are never
+# heard; the pauses are where they answer. About 69 s of speech and 91 s of pauses, about 160 s in all.
+hold_01: Very good. I shall make enquiries.
+@pause 3
+hold_02: Mr. Higgins? Sorry to trouble you. Has a wireless handset come through the exchange this morning?
+@pause 5
+hold_03: A handset, Mr. Higgins. A telephone. Wireless.
+@pause 4
+hold_04: No, not the wireless. A wireless telephone. Yes, I know.
+@pause 5
+hold_05: He's gone to look in the apparatus room, caller. It may be some time.
+@pause 6
+hold_06: Directory Enquiries? Operator here. I'm trying to trace a handset that doesn't know its own number.
+@pause 5
+hold_07: Yes, I'm quite serious.
+@pause 5
+hold_08: They suggest it may be under K, for Kellogg Switchboard. That's me, caller. Do select it.
+@pause 6
+hold_09: Still holding, caller? Splendid. The kettle's just on.
+@pause 6
+hold_10: Mr. Higgins has found a handset. No, that one's bakelite. Rather heavy for a pocket.
+@pause 6
+hold_11: Trunks? Could you ring round the other exchanges for a lost handset? Yes, the whole country, if you would.
+@pause 6
+hold_12: One lump or two, Mr. Higgins?
+@pause 7
+hold_13: Caller, might it be in your coat? One so often leaves things in one's coat.
+@pause 7
+hold_14: Trunks say Manchester have something, but it's a budgerigar.
+@pause 7
+hold_15: It's gone rather quiet. Just me and the clock.
+@pause 6
+hold_16: Do make sure the Bluetooth is switched on, caller. That's the setting with the little blue emblem.
+@pause 7
+hold_17: I'm afraid I shall have to clear the line shortly, caller.
 
 # --- Mode 3: Earpiece volume ----------------------------------------------------------------------------------------
 # vol_ear_prompt: on entering mode 3. vol_ear_<n>: after dialing n, played at the new level as a sample.
@@ -588,12 +549,14 @@ vol_mic_invalid: Nought would leave you quite inaudible, caller. One to nine, pl
 vol_mic_wait: Up or down, caller? Do make up your mind.
 
 # --- Mode 5: Tone era -----------------------------------------------------------------------------------------------
-# era_prompt: on entering mode 5. era_<n>: after dialing n. era_invalid: 4 to 9. era_invalid_0: 0.
+# era_prompt: on entering mode 5, spoken by the era set before the caller dialed 5. Names the three eras by their
+#   short names: 1 the Switchboard Days, 2 Ma Bell, 3 the Post Office.
+# era_desc: after an era is chosen, spoken by the persona of the NEW era: a longer welcome to this persona's own era.
+#   (Each persona only ever describes its own era.)
+# era_invalid: the caller dialed 4 to 9. era_invalid_0: the caller dialed 0.
 # era_wait: the first remark if nothing is dialed.
-era_prompt: The exchange. Dial one, two, or three.
-era_1: Era one. The American exchange, before nineteen sixty-five.
-era_2: Era two. The American Bell System tone plan.
-era_3: Era three. The General Post Office. Jolly good.
+era_prompt: The exchange. Dial one for the Switchboard Days, two for Ma Bell, or three for the Post Office.
+era_desc: Good day, caller, and welcome to the Post Office. This is a General Post Office exchange of the nineteen-fifties. Our dialling tone is a low purr, our engaged tone a patient beep, and our bells ring twice. Do mind your manners on the line.
 era_invalid: I'm afraid there is no such exchange, caller. One, two, or three.
 era_invalid_0: Oh, caller? That is the operator, and you have her already. One, two, or three.
 era_wait: Which exchange shall it be, caller?
@@ -606,6 +569,14 @@ forget_done: Your telephone has been forgotten.
 forget_none: There is no telephone to forget, caller.
 forget_invalid: That was not a six, caller. Dial six, or replace the receiver.
 forget_wait: Do you wish me to forget this telephone or not, caller?
+
+# --- Mode 9: Voice assistant ---------------------------------------------------------------------------------------
+# va_start: on dialing 9; then the cellphone's assistant (Siri) is heard. Dial tone when it finishes.
+# va_failed: the cellphone did not start its assistant; then dial tone.
+# va_nophone: 9 dialed while no phone is connected; then the no-phone monologue restarts.
+va_start: Nine is for emergencies, caller, but I suppose this will do. Putting you through to your handset's assistant.
+va_failed: I'm afraid your handset's assistant is not answering, caller.
+va_nophone: I'm afraid there is no handset to ask, caller. Dial two to pair one.
 
 # --- Repeated invalid digits (shared by all modes) ------------------------------------------------------------------
 # The first invalid digit in a mode gets that mode's own *_invalid remark. If the caller keeps dialing invalid digits,
@@ -633,7 +604,7 @@ wait_3: Well. I shall clear the line, then. Good day.
 # nophone_call: the caller dialed 1 (place a call), which cannot work without a phone. The monologue then restarts.
 # nophone_back: a mode finished and the phone is still not connected; the monologue restarts after this line.
 # nophone_connected: the phone connects during the monologue; then dial tone.
-nophone_intro: Operator speaking. I'm afraid no telephone is connected. Dial two, and select weeBell on your wireless handset.
+nophone_intro: Operator speaking. I'm afraid no telephone is connected. Dial two, and select Kellogg Switchboard on your wireless handset.
 nophone_intro_away: Operator speaking. I'm afraid I cannot reach your wireless handset. Is it switched on, caller? I shall keep trying.
 nophone_1: Did you wish to pair a telephone, caller? Dial two.
 nophone_1_away: I'm still trying your handset, caller. Is it perhaps in another room?
@@ -647,6 +618,18 @@ nophone_glad: Oh! You are there. How splendid.
 nophone_call: I'm afraid I cannot connect a call without a telephone, caller. Dial two to pair one.
 nophone_back: Now then, caller. About that telephone.
 nophone_connected: Ah, your handset is connected. Do go ahead.
+
+# --- Call errors (mode 1) ------------------------------------------------------------------------------------------
+# doc/phone_ui.md, "Call errors". Remaining digits are ignored; after the clip, dial tone.
+# call_bad_area: the area code is impossible (starts with 0 or 1, or is an N11 code such as 411).
+# call_bad_exchange: the exchange (digits 4 to 6) starts with 0 or 1.
+# call_blocked: the area code is blocked (900 or 976, premium rate).
+# call_refused: the cellphone refused to dial, for a reason other than no service (that uses noservice_call).
+# Era 3: played after a few seconds of the number-unobtainable tone (generated, not in this file).
+call_bad_area: I'm afraid that area code is not recognised, caller. Do check the number and dial again.
+call_bad_exchange: I'm afraid that number is not recognised, caller. Do check it and dial again.
+call_blocked: I'm afraid calls to that code are not permitted from this telephone, caller.
+call_refused: I'm afraid your handset declined to place the call, caller. Do try again shortly.
 
 # --- Connection status --------------------------------------------------------------------------------------------
 # Follows what the Bluetooth stack reports (doc/phone_ui.md, "Connection status"). Lines marked "breaks in" cut off
@@ -671,7 +654,9 @@ noservice: I'm afraid your handset has no service at present, caller.
 noservice_call: I'm afraid your handset still has no service, caller. Do try again later.
 
 # --- Interruptions --------------------------------------------------------------------------------------------------
-# The caller starts dialing while the operator is speaking. intr_*: at random. intr_esc_*: on repeated interruptions.
+# The caller starts dialing while the operator is talking at them (operator list, no-phone monologue, era
+# description). intr_*: the first interruption since pick-up, at random. intr_esc_*: each later one, in order; the
+# last repeats. The remark finishes before the dialed mode starts.
 intr_1: I beg your pardon.
 intr_2: Do mind your manners, caller.
 intr_3: Hold the line, please.

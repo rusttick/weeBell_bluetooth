@@ -90,8 +90,12 @@ Standardized as the first electronic switch (No. 1 ESS, Succasunna NJ, 1965) wen
 | Ringback | 440 + 480 Hz | −19 dBm | 2 s on / 4 s off |
 | High tone | 480 Hz | −17 dB | |
 | Receiver off-hook | 1400 + 2060 + 2450 + 2600 Hz | | 0.1 s on / 0.1 s off |
+| Special Information Tone | see note | | three segments |
 
-All **[S]**. A second reference table gives ringback at −13 dBm and lists reorder as 0.3 s on /
+All **[S]**. Special Information Tone: 913.8 or 985.2 Hz, then 1370.6 or 1428.5 Hz, then 1776.7 Hz, each segment
+276 or 380 ms; the choice of frequencies and lengths encodes the condition. It was developed by AT&T around 1980 (Bell System Technical Journal, 1981;
+Wikipedia, "Special information tone"), so it belongs to the later part of this profile; the design uses it before the
+era 2 intercept recordings (`phone_ui.md`, "Call errors"). A second reference table gives ringback at −13 dBm and lists reorder as 0.3 s on /
 0.2 s off (local) or 0.2 s on / 0.3 s off (toll); those disagree with the primary values above, so
 0.25/0.25 and −19 dBm are used.
 
@@ -248,7 +252,7 @@ Notes:
 - **Levels and modulation depth are not documented for the period tones.** Set by ear and against
   recordings. The current firmware's reorder level (−13 dB) is well above the −24 dBm spec.
 - **Earpiece mute while dialing** (off-normal contact, sec. 4) is authentic and removes the need to
-  filter pulse clicks. **[I]** The design makes it configurable (full pulses, faint clicks, or silent; `phone_ui.md`).
+  filter pulse clicks. **[I]** The design fixes the click level by era (faint, silent, full for eras 1 to 3; `phone_ui.md`).
   Some period sets only attenuated the clicks with a varistor across the receiver. **[S]**
   (<https://en.wikipedia.org/wiki/Pulse_dialing>) An extension phone on the same line has no shunt for another set's
   dial, so it heard the pulses in full. **[I]**
@@ -278,6 +282,9 @@ These came up in searches but are **not** in any era profile:
 
 ## 10. Open questions
 
+0. **UK number-unobtainable tone.** Used for era 3 call errors (`phone_ui.md`, "Call errors"), but only **[R]**
+   (sec. 3). Like the UK ringback, it goes into the firmware as a flagged placeholder (400 Hz, steady) until confirmed.
+
 1. **Era digits — decided.** `1` = US pre-1965 (A), `2` = US Precise (B), `3` = UK GPO (C). No
    other eras for now.
 2. **UK ringback frequency.** Era C is partial: the ringback tone is unverified (sec. 3). Until it is
@@ -302,6 +309,8 @@ These came up in searches but are **not** in any era profile:
 - **[S]** Busy signal: <https://en.wikipedia.org/wiki/Busy_signal>
 - **[S]** Ringing tone: <https://en.wikipedia.org/wiki/Ringing_tone>
 - **[S]** Reorder tone: <https://en.wikipedia.org/wiki/Reorder_tone>
+- **[S]** Special information tone: <https://en.wikipedia.org/wiki/Special_information_tone>
+- **[S]** Intercept message: <https://en.wikipedia.org/wiki/Intercept_message>
 - **[S]** Off-hook tone: <https://en.wikipedia.org/wiki/Off-hook_tone>
 - **[S]** Permanent signal: <https://en.wikipedia.org/wiki/Permanent_signal>
 - **[S]** Pulse dialing: <https://en.wikipedia.org/wiki/Pulse_dialing>

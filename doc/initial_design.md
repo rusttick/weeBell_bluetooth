@@ -404,7 +404,7 @@ After the handset goes off-hook, the **first digit dialed selects a mode**. **De
 | `7` | Unassigned | Decided 2026-09-28 |
 | `8` | Unassigned | Decided 2026-09-28 |
 | `0` | Operator (help) | Decided 2026-09-28 |
-| `9` | Unassigned | Proposed |
+| `9` | Voice assistant | Decided 2026-09-29 |
 
 - `1`: see "Dialing rules".
 - `2`: see "Bluetooth pairing via the dial itself".
@@ -414,7 +414,8 @@ After the handset goes off-hook, the **first digit dialed selects a mode**. **De
 - `6`: dial `6` again to confirm; the phone then says it is unpaired.
 - `0`: states each top-level mode ("dial one and then the number to place a call", …); not nested. Aims at what a
   real operator did when you dialed `0`. See `phone_ui.md`, "0: Operator".
-- `9`: an error indication (tone or clip) if dialed at the mode step.
+- `9`: the cellphone's voice assistant (the original firmware's dial-`0` feature); see `phone_ui.md`, "9: Voice
+  assistant". `7` and `8` are unassigned and get a remark from the operator.
 
 Rules:
 - **Once a mode is selected, digits 0-9 are all ordinary numeric input for that
@@ -424,8 +425,8 @@ Rules:
   machine once implemented — the on-hook handler currently resets call-related
   states; it needs to also cleanly unwind any in-progress special-mode state (for
   example, mid-passkey-entry or a pending forget-pairing confirmation).
-- The old "dial `0` alone starts voice assistant" behavior (`_appCanInitiateAssistantCall`) is
-  not in the mode list. **Open:** drop it, or give it one of the unassigned digits.
+- The old "dial `0` alone starts voice assistant" behavior (`_appCanInitiateAssistantCall`) moves to `9`
+  (2026-09-29).
 
 ### Dialing rules (mode 1) — Decided
 
@@ -468,7 +469,7 @@ Rules:
 - **On entering the mode** the phone says the label and how to use it ("Earpiece volume. Dial one for the quietest, up
   to nine for the loudest."). **After a level is set** it is applied at once, and the phone speaks a confirmation that
   is also a sample of the new level: the label, the digit and a short sample sentence (`phone_ui.md`, "3 and 4";
-  `audio_clips.md`). A true sample for the microphone is open (record and play back; `phone_ui.md`, open issue 21).
+  `audio_clips.md`). The microphone level is only confirmed, not sampled (no record and play back).
 - These values persist across power cycles.
 
 ### Tone era — Decided (mode 5)
@@ -487,7 +488,7 @@ Each direction has ten profiles; the digit dialed selects one and `0` is flat (b
 second-order filter sections (high-pass, low-pass, peaking, low or high shelf) and a pre-gain that gives back the headroom
 a boost uses. They are **starting points to judge by ear and by recordings**, not final values, and are built and tested in
 `hwtest` (`eqp`, `sweep`, `noise`, `rec`, `hwtest/main/eq.c`). **Changed (2026-09-28):** they are not dial modes (`7`,
-`8` and `9` are unassigned); the profile chosen on the bench for each direction is fixed in the firmware.
+`8` are unassigned); the profile chosen on the bench for each direction is fixed in the firmware.
 
 **Where they act.** The microphone profile filters the codec's input before anything uses it (calls, recordings); the
 earpiece profile filters the audio just before the codec. The tone generators and clips go through the earpiece profile too.
@@ -595,7 +596,6 @@ tone-only mode with fixed defaults, in which essentially only placing a call wor
 - earpiece volume digit
 - microphone volume digit
 - tone era
-- dial clicks (full, faint or silent; how it is set is open in `phone_ui.md`)
 
 Pairing state is best taken from the Bluetooth bond list itself, with a single-bond rule, instead
 of a separate stored copy. That removes the case where the stored copy and the bond list disagree.
@@ -606,12 +606,12 @@ Brightness and country code are no longer needed.
 Tones are **generated** in firmware, with the sources and numbers in `doc/tones.md`. Only verified
 tones are included in the era profiles. Behaviors to implement, drawn from that document:
 
-- While the dial is off-normal, the earpiece plays the dial pulses at a configurable setting: full, faint clicks, or
-  silent (muted, the authentic behavior of the caller's own set). See `phone_ui.md`.
+- While the dial is off-normal, the earpiece plays the dial pulses at a level fixed by the era: faint (era 1), silent
+  (era 2) or full (era 3), generated in the firmware. See `phone_ui.md`, "Dial clicks".
 - Dialed pulses are ignored while a busy tone plays.
 - Ringback tone is generated locally when the cellphone reports the call is alerting (HFP
-  `callsetup` = 3). **Open:** whether to mute the cellphone's own in-band ringback in the call
-  audio so the period tone plays instead.
+  `callsetup` = 3). **Decided (2026-09-29):** the cellphone's call audio is muted until the call is
+  answered, so its own ringback and carrier announcements are not heard (`phone_ui.md`, "Calls").
 - Ringing stops immediately when the handset is lifted.
 
 ### Behavior by era — Decided
@@ -642,11 +642,9 @@ tune on the bench.
 higher quality than would fit in flash. The full list to record, with status, is `doc/audio_clips.md`.
 
 - **Format:** 16-bit mono WAV, **all clips in one large WAV (a "bank") plus an index of clip boundaries** (clip ID,
-  start sample, length), with per-clip files as the fallback (`doc/audio_clips.md`). **Two banks, 8 kHz and 16 kHz, are
-  in the design**: active notifications could play during a call (the only one listed, "battery low", is obsolete since
-  the phone has no battery, so the 8 kHz bank may not be needed), so the firmware picks the bank
-  that matches the codec's current I2S rate (8 kHz for a CVSD call, 16 kHz for mSBC or when idle) and never re-clocks
-  the codec mid-clip. Stage 6 found no audible quality difference between 16, 22.05 and 44.1 kHz on the earpiece, so
+  start sample, length), with per-clip files as the fallback (`doc/audio_clips.md`). **One bank, 16 kHz**
+  (2026-09-29): no clip plays during a call, so the 8 kHz bank planned for in-call notifications is dropped. The codec
+  is re-clocked to 16 kHz at call end, before any clip, and never mid-clip. Stage 6 found no audible quality difference between 16, 22.05 and 44.1 kHz on the earpiece, so
   nothing above 16 kHz is stored.
 - **SD wiring cost:** 1-bit SD mode uses **IO14 (CLK), IO15 (CMD) and IO2 (DATA0)**; 4-bit mode also uses IO4,
   IO12 and IO13, which the GPIO budget cannot spare. Stage 4 found enough clean GPIOs for everything else (see
@@ -795,11 +793,9 @@ Not part of the BOM, kept here so they don't get re-litigated:
   entry, forget-pairing confirmation), not just call states.
 - Volume ranges: kept at the `gain.h` limits after stage 6; revisit only if real prompts or calls sound wrong.
 - Tune the era timeouts (about 50 s off-hook and about 16 s partial-dial for the US Precise era).
-- Whether to keep a "dial `0` for voice assistant" behavior, and if so on which digit.
 - UK era: confirm its ringback tone (currently a flagged placeholder) and its off-hook and
   partial-dial behavior (`tones.md`, section 10).
 - Identify the codec (ES8388 vs AC101) inside the A1S module and pick free GPIOs from the header.
-- Whether to mute the cellphone's own ringback and play the period tone instead.
 - Voice and style for the recorded prompts, and the clip sample rate and format (`audio_clips.md`; SD card storage is decided).
 - GPIO budget with the SD card: which fifth GPIO (or which input to drop) — validation plan stage 4.
 - Verify tone levels and modulation depth by ear or by analysing recordings (`tones.md`).

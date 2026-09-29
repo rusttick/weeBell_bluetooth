@@ -27,7 +27,7 @@
 #include "nvs_flash.h"
 #include "cmds.h"
 
-#define DEVICE_NAME    "weeBell-test"
+#define DEVICE_NAME    "Kellogg Switchboard"
 #define BR_FRAMES      64           // frames per bridge iteration (4 ms at 16 kHz, 8 ms at 8 kHz)
 #define SB_BYTES       8192
 #define RX_PRIME_MS    30           // audio buffered before earpiece playback starts (the jitter buffer)

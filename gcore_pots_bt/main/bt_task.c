@@ -102,7 +102,7 @@ static uint8_t peer_bdname_len;
 static esp_bd_addr_t ssp_pairing_addr;
 #endif
 
-static const char device_name[] = "weeBell";
+static const char device_name[] = "Kellogg Switchboard";
 static char peer_device_name[ESP_BT_GAP_MAX_BDNAME_LEN + 1];
 
 
