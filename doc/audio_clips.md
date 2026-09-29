@@ -4,7 +4,7 @@ Running list of every recorded prompt the firmware needs. **Update this file whe
 changes or removes a spoken prompt.** Companion to `doc/initial_design.md` (the modal dial
 interface) and `doc/tones.md` (tones, which are generated, not recorded).
 
-Last updated: 2026-09-20 (both 8 kHz and 16 kHz banks decided; battery-low notification added).
+Last updated: 2026-09-28 (research on reading digit strings naturally added under "Numbers").
 
 ## Format and storage
 
@@ -12,19 +12,23 @@ Last updated: 2026-09-20 (both 8 kHz and 16 kHz banks decided; battery-low notif
 quality. **Use a single large WAV file (a "bank") holding all the clips, plus an index of clip boundaries** (below);
 per-clip files (`num_5.wav`) remain the fallback if the stage 8 measurement says the bank is too slow.
 
-| Item | Value |
-|---|---|
-| File format | 16-bit signed PCM mono WAV. One bank file `prompts.wav` plus an index `prompts.idx` whose entries are named by clip ID (for example `num_5`). |
-| Sample rate | **Decided: two banks, 8 kHz and 16 kHz** (see "Two banks" below). Stage 6 (2026-09-20): no audible quality difference at 1 kHz between 16, 22.05 and 44.1 kHz on the earpiece, so nothing higher is stored. Keep the original recordings at their highest rate and downsample from those. |
-| Channels | mono |
-| Loudness | **Proposed:** loudness-normalize every clip to **-23 LUFS** in Audacity (Loudness Normalization, mono treated as single channel), then hard-limit peaks at **-1 dBFS**; the earpiece volume mode (mode 3) applies on top. See the Audacity procedure below. |
-| Silence | trim leading and trailing silence to about 50 ms |
-| Card | FAT32, 32 GB or smaller |
-| Fallback | **Proposed:** a very small built-in set (or tones) for when the card is missing |
+- **File format:** 16-bit signed PCM mono WAV. One bank file `prompts.wav` plus an index `prompts.idx` whose entries
+  are named by clip ID (for example `num_5`).
+- **Sample rate:** **Decided: two banks, 8 kHz and 16 kHz** (see "Two banks" below). Stage 6 (2026-09-20): no audible
+  quality difference at 1 kHz between 16, 22.05 and 44.1 kHz on the earpiece, so nothing higher is stored. Keep the
+  original recordings at their highest rate and downsample from those.
+- **Channels:** mono.
+- **Loudness:** **Proposed:** loudness-normalize every clip to **-23 LUFS** in Audacity (Loudness Normalization, mono
+  treated as single channel), then hard-limit peaks at **-1 dBFS**; the earpiece volume mode (mode 3) applies on top.
+  See the Audacity procedure below.
+- **Silence:** trim leading and trailing silence to about 50 ms.
+- **Card:** FAT32, 32 GB or smaller.
+- **Fallback:** **Proposed:** a very small built-in set (or tones) for when the card is missing.
 
 Most prompts play through the earpiece while the handset is off-hook and not in a call, free of the 8 kHz call-audio
-limit. **Some notifications can play during a call** (for example "battery low"), so both an 8 kHz and a 16 kHz bank are
-needed ("Two banks" below).
+limit. **Some notifications could play during a call**, so both an 8 kHz and a 16 kHz bank are planned ("Two banks"
+below). The only one listed, "battery low", is now obsolete (no battery), so the 8 kHz bank is only needed if another
+in-call notification is added.
 
 **Both 8 kHz and 16 kHz** (see the sample analysis below). Convert with, for example:
 `ffmpeg -i in.mp3 -ar 16000 -ac 1 -sample_fmt s16 out.wav`, or on macOS without ffmpeg:
@@ -35,10 +39,9 @@ needed ("Two banks" below).
 Yes. One 16 kHz mono 16-bit WAV can hold every clip back to back, with a small **index** that says where each clip
 starts and how long it is:
 
-| File | Contents |
-|---|---|
-| `prompts.wav` | An ordinary WAV (plays in any editor) holding all the clips one after another, with a little silence between them. |
-| `prompts.idx` | Text, one line per clip: `clip_id,start_sample,length_samples` (for example `num_5,48000,6400`). |
+- `prompts.wav`: an ordinary WAV (plays in any editor) holding all the clips one after another, with a little silence
+  between them.
+- `prompts.idx`: text, one line per clip: `clip_id,start_sample,length_samples` (for example `num_5,48000,6400`).
 
 **How it plays:** the firmware opens `prompts.wav` once and reads the index into memory at start-up (500 clips is
 about 12 KB). To play a clip it seeks to `data offset + start_sample × 2` and streams `length_samples × 2` bytes to the
@@ -83,8 +86,9 @@ clip starts: `bank = (codec_rate == 16000) ? 16k : 8k`. The firmware already kno
   or when idle. Stage 9 decides whether the codec should run at 16 kHz during wide-band calls (better speech than
   down-sampling to 8 kHz); if so the rule above already picks the right bank.
 
-**Both banks are needed** because notifications such as "battery low" can play during a call, when the codec may be
-running at 8 kHz (narrowband) or 16 kHz (wide-band).
+**Both banks were planned** because notifications such as "battery low" could play during a call, when the codec may be
+running at 8 kHz (narrowband) or 16 kHz (wide-band). "Battery low" is now obsolete (the phone has no battery), so the
+8 kHz bank is only needed if another in-call notification is added.
 
 ### Getting the clip boundary metadata
 
@@ -142,13 +146,14 @@ a script that joins them can write the index directly, since it knows each clip'
 
 ### Sample analysis: `camilla_montgomery.mp3` (2026-09-20)
 
-| Property | Value |
-|---|---|
-| Container | MP3, mono, 44.1 kHz, constant 128 kbit/s (LAME-type encoder, "Lavf60.16.101"); 3.37 s |
-| File size | 70,981 bytes: 53,916 of audio plus about 17 KB of metadata (an ID3 tag carrying a C2PA "content credentials" manifest). The metadata is dropped in a WAV. |
-| Bandwidth | Nothing above 16 kHz (the encoder's low-pass). 95% of the energy is below 3 kHz, 99% below 7.4 kHz, 99.9% below 11 kHz. 4 to 8 kHz holds 3.3% of the energy (the "s" and "f" sounds). |
-| Level | Peak -10.2 dBFS, RMS -30.0 dBFS (crest factor 19.8 dB): quiet. About +9.2 dB of gain brings the peak to -1 dBFS (RMS -21 dBFS). |
-| Silence | 0.08 s before the speech and about 0.34 s after it (below -50 dBFS); noise floor -75.7 dBFS. |
+- **Container:** MP3, mono, 44.1 kHz, constant 128 kbit/s (LAME-type encoder, "Lavf60.16.101"); 3.37 s.
+- **File size:** 70,981 bytes: 53,916 of audio plus about 17 KB of metadata (an ID3 tag carrying a C2PA "content
+  credentials" manifest). The metadata is dropped in a WAV.
+- **Bandwidth:** nothing above 16 kHz (the encoder's low-pass). 95% of the energy is below 3 kHz, 99% below 7.4 kHz,
+  99.9% below 11 kHz. 4 to 8 kHz holds 3.3% of the energy (the "s" and "f" sounds).
+- **Level:** peak -10.2 dBFS, RMS -30.0 dBFS (crest factor 19.8 dB): quiet. About +9.2 dB of gain brings the peak to
+  -1 dBFS (RMS -21 dBFS).
+- **Silence:** 0.08 s before the speech and about 0.34 s after it (below -50 dBFS); noise floor -75.7 dBFS.
 
 **Why 16 kHz, mono, 16-bit WAV**
 - **Uncompressed WAV:** the SD card is not a constraint (see the table below), and WAV costs no CPU and adds no
@@ -180,96 +185,207 @@ and voice so they sound consistent.
 
 ## Clip list
 
-Status values: `todo` (not recorded), `recorded`, `n/a` (dropped). Nothing is recorded yet.
+Status values: `todo` (not recorded), `recorded`, `n/a` (dropped). Nothing is recorded yet. Tables list only the ID,
+the text and the status; where each clip is used is in the notes under each table and in `phone_ui.md`.
 
 ### Numbers (used when announcing a setting)
 
-| ID | Text | Used by | Status |
-|---|---|---|---|
-| `num_0` | "zero" | volume level 0 (loudest), era digit, digits read back | todo |
-| `num_1` | "one" | same | todo |
-| `num_2` | "two" | same | todo |
-| `num_3` | "three" | same | todo |
-| `num_4` | "four" | same | todo |
-| `num_5` | "five" | same | todo |
-| `num_6` | "six" | same | todo |
-| `num_7` | "seven" | same | todo |
-| `num_8` | "eight" | same | todo |
-| `num_9` | "nine" | same | todo |
+| ID | Text | Status |
+|---|---|---|
+| `num_0` | "zero" | todo |
+| `num_1` | "one" | todo |
+| `num_2` | "two" | todo |
+| `num_3` | "three" | todo |
+| `num_4` | "four" | todo |
+| `num_5` | "five" | todo |
+| `num_6` | "six" | todo |
+| `num_7` | "seven" | todo |
+| `num_8` | "eight" | todo |
+| `num_9` | "nine" | todo |
 
-The digit `0` is the *loudest* volume and `1` is the quietest (see the volume mapping in
-`initial_design.md`). Say the digit that was dialed, so "zero" means the loudest setting.
+Used after a label to confirm a setting, for phone numbers and for any digits read back. `num_0` is used for
+"equalizer off"; it is no longer a volume level. Volume uses only `1` (quietest) to `9` (loudest) since 2026-09-28 (see
+the volume model in `initial_design.md`).
 
-### Volume and setting confirmations
+### Reading digit strings naturally (research, 2026-09-28)
 
-After a setting is changed, the firmware announces which value was set: the label clip, then the
-digit.
+A single recording of each digit played back to back sounds robotic, because a person speaking a phone number changes
+the pitch of a digit by its position. The established method for building natural phone-number readout from a minimal
+set of recordings is **US Patent 6,601,030 B2, "Method and system for recorded word concatenation"** (Ann K. Syrdal,
+AT&T, filed 1998, later Nuance; expired): <https://patents.google.com/patent/US6601030B2/en>
 
-| ID | Text | Used by | Status |
-|---|---|---|---|
-| `lbl_earpiece_volume` | "Earpiece volume" | mode 3, before the digit | todo |
-| `lbl_mic_volume` | "Microphone volume" | mode 4, before the digit | todo |
-| `lbl_tone_era` | "Tone era" | mode 5, before the digit | todo |
-| `lbl_mic_eq` | "Microphone equalizer" | mode 7, before the digit (digit zero = off) | todo |
-| `lbl_earpiece_eq` | "Earpiece equalizer" | mode 8, before the digit (digit zero = off) | todo |
+**Three pitch patterns, chosen by position, not by digit.** The patent names the positions of a 10-digit number after
+its example `(123) 456-7890` and marks each with a ToBI (Tones and Break Indices) intonation pattern:
 
-Optional, if you want a menu prompt on entering a mode (not decided):
+- **Positions 1, 2, 4, 5, 7, 8, 9:** `H*`, a plain accented digit, level.
+- **Positions 3 and 6** (end of the area code and of the exchange): `H* L-H%`, a continuation rise. The pitch dips, then
+  rises at the group break ("more coming").
+- **Position 10** (the last digit): `H* L-L%`, a final fall. The pitch drops ("done").
 
-| ID | Text | Used by | Status |
-|---|---|---|---|
-| `prm_pick_volume` | "Dial a number from one to zero" | modes 3 and 4 | todo (optional) |
-| `prm_pick_era` | "Dial the era number" | mode 5 | todo (optional) |
+Method details:
+
+- **Inventory:** 10 digits × 3 patterns = **30 clips**. The patent recommends **two or more takes** of each digit and
+  pattern, picked at random without replacement during playback, so a string such as 555-5555 does not sound like the
+  same clip repeated.
+- **Script:** record real phone-number strings (the patent's examples are "672-1288" and "380-1489"), spoken
+  "naturally but clearly and carefully", and cut the target digits out of them.
+- **Coarticulation:** choose the digit before each target so that its last sound is made at the same place in the
+  mouth as the target's first sound (for example /uw/ then /w/: "two" before "one"). The cut-out digit then joins its
+  new neighbour without a mismatch.
+- **Cutting:** keep 0 to 50 ms of silence before and after an `H*` or `H* L-L%` target. An `H* L-H%` target may keep
+  some or all of the pause that follows it, so the group break travels with the clip.
+
+**Earlier alternative:** US Patent 5,740,319, "Prosodic number string synthesis" (Frederick C. Wedemeier, Texas
+Instruments, filed 1993): <https://patents.google.com/patent/US5740319A/en>. It needs **130 segments**: the ten digits at
+the start of a string, at the end, and before a group pause, plus all 100 digit pairs 00 to 99, recorded at constant
+pitch, cadence and volume except for the final and pre-pause digits. Each digit is split in two halves and a number is
+built from pairs (`322-2333` = `3.1 + 2|2 + 2|3 + 3.p + 2|3 + 3|3 + 3.t`). It joins more smoothly but needs four
+times the clips and exact cut points.
+
+**Proposed for this project:** replace `num_0` … `num_9` with the 30-clip set, `num_<d>_h`, `num_<d>_lh` and
+`num_<d>_ll`, ideally two takes each. A single digit after a label ("Earpiece volume … seven") uses the final-fall
+`_ll` clip. With a text-to-speech service, generate whole numbers written with group punctuation (for example "six
+seven two, one two eight eight.") and cut the target digits using the service's word timestamps, rather than
+generating isolated digits.
+
+### Labels (setting names)
+
+| ID | Text | Status |
+|---|---|---|
+| `lbl_earpiece_volume` | "Earpiece volume" | todo |
+| `lbl_mic_volume` | "Microphone volume" | todo |
+| `lbl_tone_era` | "Tone era" | todo |
+| `lbl_mic_eq` | "Microphone equalizer" | n/a |
+| `lbl_earpiece_eq` | "Earpiece equalizer" | n/a |
+
+Each label is spoken on entering its mode (3, 4, 5, 7, 8) and again before the digit when a setting is confirmed. For
+the equalizers, digit zero means off. For the earpiece volume the new level is applied first and `vol_sample` follows
+the digit, so the confirmation doubles as a sample of the new loudness (decided 2026-09-28).
+
+### Mode instructions and samples
+
+| ID | Text | Status |
+|---|---|---|
+| `prm_pick_volume` | "Dial one for the quietest, up to nine for the loudest." | todo (decided) |
+| `vol_sample` | "This is how loud calls will sound." | todo (decided; wording open) |
+| `prm_pick_era` | "Dial one, two or three." | todo (proposed) |
+| `prm_pick_eq` | "Dial one to nine to choose a setting, or zero for none." | n/a |
+
+Notes:
+
+- The operator (mode 0) only names each mode; the mode explains what to dial when it is entered. Decided for modes 3
+  and 4, proposed for 5, 7 and 8 (`phone_ui.md`).
+- `prm_pick_volume`: modes 3 and 4, right after the label, on entering the mode.
+- `vol_sample`: after the label and digit confirming a new earpiece level, played at that level as a sample.
+- `prm_pick_era`: mode 5, after the label. `prm_pick_eq`: modes 7 and 8, after the label.
 
 ### Tone eras (names read after selecting an era)
 
 The final list depends on which tone profiles ship (see `tones.md`, section 10).
 
-| ID | Text | Era | Status |
+| ID | Text (example) | Era | Status |
 |---|---|---|---|
-| `era_1_name` | e.g. "American, before nineteen sixty-five" | Profile A | todo |
-| `era_2_name` | e.g. "American, standard" | Profile B | todo |
-| `era_3_name` | e.g. "British, General Post Office" | Profile C (partial; pending) | todo |
+| `era_1_name` | "American, before nineteen sixty-five" | A | todo |
+| `era_2_name` | "American, standard" | B | todo |
+| `era_3_name` | "British, General Post Office" | C | todo |
+
+Era C is partial and pending (see `tones.md` and `phone_ui.md`, open issue 24).
 
 ### Bluetooth pairing (mode 2)
 
-| ID | Text | When | Status |
-|---|---|---|---|
-| `pair_enter_code` | "Bluetooth pairing. Enter the six-digit code shown on your phone." | pairing started, passkey requested | todo |
-| `pair_success` | "Paired." | pairing succeeded | todo |
-| `pair_failed` | "Pairing failed." | authentication failed | todo |
-| `pair_timeout` | "Pairing timed out." | pairing window expired | todo |
+| ID | Text | Status |
+|---|---|---|
+| `pair_enter_code` | see the note below | todo (stale) |
+| `pair_success` | "Paired." | todo |
+| `pair_failed` | "Pairing failed." | todo |
+| `pair_timeout` | "Pairing timed out." | todo |
+
+Notes:
+
+- `pair_enter_code`: "Bluetooth pairing. Enter the six-digit code shown on your phone." It is from the old passkey
+  plan, which fails on an iPhone. It is to be replaced by `pair_start`, which tells the user to choose the phone in
+  their Bluetooth settings (`phone_ui.md`, "2: Bluetooth pairing").
+- `pair_success` plays when pairing succeeds, `pair_failed` on an authentication failure, and `pair_timeout` when the
+  pairing window expires.
 
 ### Forget pairing (mode 6)
 
-| ID | Text | When | Status |
-|---|---|---|---|
-| `forget_confirm` | "Dial six again to unpair. Hang up to cancel." | after dialing 6 | todo |
-| `forget_done` | "Phone unpaired." | after confirming | todo |
-| `forget_cancel` | "Cancelled." | any other digit dialed at the prompt | todo |
+| ID | Text | Status |
+|---|---|---|
+| `forget_confirm` | "Dial six again to unpair. Hang up to cancel." | todo |
+| `forget_done` | "Phone unpaired." | todo |
+| `forget_cancel` | "Cancelled." | todo |
 
-The confirm wording ("Dial six again") is from the design; the "Phone unpaired" wording is a
-suggestion ("says now unpaired or something like that"). The cancel clip is only needed if a
-different digit cancels rather than just being ignored (not decided).
+`forget_confirm` plays after dialing 6 and `forget_done` after confirming. The confirm wording ("Dial six again") is
+from the design; the "Phone unpaired" wording is a suggestion ("says now unpaired or something like that"). The cancel
+clip is only needed if a different digit dialed at the prompt cancels rather than just being ignored (not decided).
+
+### Operator (mode 0)
+
+Dialing `0` reaches the "operator" (decided 2026-09-28). The ideal is what a real operator did when you dialed `0`; for
+now it only states each top-level mode, not nested. One clip per line (proposed), so lines can be changed or dropped
+independently. Wording is a draft; see `phone_ui.md`, "0: Operator".
+
+| ID | Text | Status |
+|---|---|---|
+| `op_intro` | "Operator." | todo (optional) |
+| `op_mode_1` | "Dial one and then the ten-digit number to place a call." | todo |
+| `op_mode_2` | "Dial two to pair a phone." | todo |
+| `op_mode_3` | "Dial three to set the earpiece volume." | todo |
+| `op_mode_4` | "Dial four to set the microphone volume." | todo |
+| `op_mode_5` | "Dial five to choose the tone era." | todo |
+| `op_mode_6` | "Dial six to forget the paired phone." | todo |
+| `op_mode_7` | "Dial seven to choose the microphone equalizer." | n/a |
+| `op_mode_8` | "Dial eight to choose the earpiece equalizer." | n/a |
+| `op_hangup` | "Hang up at any time to cancel." | todo (optional) |
+
+`op_intro` starts the list and `op_hangup` ends it. The equalizer clips (`lbl_*_eq`, `prm_pick_eq`, `op_mode_7`,
+`op_mode_8`) are dropped: `7`, `8` and `9` are unassigned modes (2026-09-28).
 
 ### Errors and status
 
-| ID | Text | When | Status |
-|---|---|---|---|
-| `err_no_phone` | "No phone is connected." | off-hook while Bluetooth is disconnected | todo (a period tone may be used instead) |
-| `err_bad_mode` | "That option is not available." | first digit is an unassigned mode (0, 7, 8 or 9) | todo (a tone may be used instead) |
-| `err_not_allowed` | "That number cannot be dialed." | a dialed number is blocked (if a blocklist is added) | todo (optional) |
+| ID | Text | Status |
+|---|---|---|
+| `err_no_phone` | "No phone is connected." | todo |
+| `err_bad_mode` | "That option is not available." | todo |
+| `err_not_allowed` | "That number cannot be dialed." | todo (optional) |
+
+Notes:
+
+- `err_no_phone`: off-hook while Bluetooth is disconnected. A period tone may be used instead.
+- `err_bad_mode`: the first digit is an unassigned mode (`7`, `8` or `9`). Replaced by a witty remark per digit, era and
+  personality (`err_mode_7` to `err_mode_9` in `voice/tts_script.txt`).
+- `err_not_allowed`: a dialed number is blocked, only if a blocklist is added.
 
 ### Active notifications (can play during a call)
 
 Played with the bank that matches the codec's current rate (see "Two banks"). More may be added; list them here.
 
-| ID | Text | When | Status |
-|---|---|---|---|
-| `note_battery_low` | "Battery low." | the battery voltage falls below the warning level, on or off a call | todo |
+| ID | Text | Status |
+|---|---|---|
+| `note_battery_low` | "Battery low." | n/a |
+
+`note_battery_low` is obsolete (2026-09-28): the phone has no battery and runs from USB (`ringer_driver_2.md`). No
+active notification is left. The 8 kHz bank was kept for notifications during a call; if none is added, it may not be
+needed (`phone_ui.md`, open issue 27).
 
 The 10-digit call rule, the incomplete-number behavior and the off-hook timeout are handled by the
 era's tones or silence (see "Behavior by era" in `initial_design.md` and `tones.md` section 7), so
 they need no clip.
+
+## Sound effects to record (not text-to-speech)
+
+**To do:** record the operator hanging up (`sfx_hangup`). It plays after her last waiting remark, just before dial
+tone returns (`phone_ui.md`, "Waiting in a mode"). Record a real handset being put down on its cradle, ideally a period
+phone, close-miked, about one second including the switch click.
+
+- Save the original recording as `voice/recordings/sfx_hangup.wav`, at its highest rate.
+- It goes into both banks like any other clip, with the ID `sfx_hangup`: trimmed, faded, and at a level that sits
+  naturally after the speech (not loudness-normalized like speech).
+
+| ID | Sound | Status |
+|---|---|---|
+| `sfx_hangup` | the operator hanging up | todo |
 
 ## Not needed
 
@@ -281,6 +397,8 @@ they need no clip.
 
 - Record the ten number clips in the same session as the labels so they blend naturally: the
   firmware plays them back to back (label, then number).
-- Say "zero", not "oh".
+- Say the digit 0 the way the persona's era would have: "oh" (or "operator", the label on the US dial's 0 hole) for
+  the 1940s-50s US and UK operators, "zero" for the 1965+ Bell System recording (not verified). Details are in the notes
+  at the top of `voice/tts_script.txt`.
 - Keep each clip short. Long prompts are annoying on a novelty phone you might hear dozens of times.
 - Record a couple of takes of the ones you expect to change (pairing and forget prompts).

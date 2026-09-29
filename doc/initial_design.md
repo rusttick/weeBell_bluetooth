@@ -150,7 +150,7 @@ no carbon-mic-style DC bias or current-loop circuitry is needed.
   the handset. The value is chosen by listening in the final enclosure (the microphone profiles in `hwtest`, `eqp mic <n>`, audition high-pass corners and more;
   the software filter is second-order, so expect a slightly higher corner to match). A parallel resistor across the
   capacitor would make it a gentle shelf if the result is still dull. The microphone level is set by the digital gain
-  (−12 dB, about volume digit 6): at 0 dB the far end heard clipping with the mouth 2 cm away.
+  (−12 dB, between volume digits 5 and 6): at 0 dB the far end heard clipping with the mouth 2 cm away.
 - **The onboard microphones are removed** from the Audio Kit (see "The codec side").
 - **Built without a PCB:** the component leads and cord wires are twisted together at each MAX9814 pin and soldered.
 
@@ -393,17 +393,28 @@ persistent storage is needed (see "Persistent settings").
 
 After the handset goes off-hook, the **first digit dialed selects a mode**. **Decided** (modes 1–6):
 
-| First digit | Mode | Notes |
+| First digit | Mode | Status |
 |---|---|---|
-| `1` | Place a call | see "Dialing rules" |
-| `2` | Bluetooth pairing | see "Bluetooth pairing via the dial itself" |
-| `3` | Earpiece (speaker) volume | one digit sets it, then the number is spoken |
-| `4` | Microphone volume | one digit sets it, then the number is spoken |
-| `5` | Tone era | one digit selects an era profile (`tones.md`) |
-| `6` | Forget pairing | dial `6` again to confirm; the phone then says it is unpaired |
-| `7` | Microphone equalizer | **Proposed:** one digit selects a profile (`0` = off), then the number is spoken; see "Equalizer profiles" |
-| `8` | Earpiece equalizer | **Proposed:** one digit selects a profile (`0` = off), then the number is spoken |
-| `0`, `9` | Unassigned | **Proposed:** an error indication (tone or clip) if dialed at the mode step |
+| `1` | Place a call | Decided |
+| `2` | Bluetooth pairing | Decided |
+| `3` | Earpiece (speaker) volume | Decided |
+| `4` | Microphone volume | Decided |
+| `5` | Tone era | Decided |
+| `6` | Forget pairing | Decided |
+| `7` | Unassigned | Decided 2026-09-28 |
+| `8` | Unassigned | Decided 2026-09-28 |
+| `0` | Operator (help) | Decided 2026-09-28 |
+| `9` | Unassigned | Proposed |
+
+- `1`: see "Dialing rules".
+- `2`: see "Bluetooth pairing via the dial itself".
+- `3` and `4`: the mode says how to use it, one digit `1`–`9` sets the level, then a spoken confirmation (for the
+  earpiece, at the new level as a sample).
+- `5`: one digit selects an era profile (`tones.md`).
+- `6`: dial `6` again to confirm; the phone then says it is unpaired.
+- `0`: states each top-level mode ("dial one and then the number to place a call", …); not nested. Aims at what a
+  real operator did when you dialed `0`. See `phone_ui.md`, "0: Operator".
+- `9`: an error indication (tone or clip) if dialed at the mode step.
 
 Rules:
 - **Once a mode is selected, digits 0-9 are all ordinary numeric input for that
@@ -436,24 +447,28 @@ Rules:
 
 ### Volume model — Decided (mode 3 and 4)
 
-- One digit sets the level. **Digit `1` is the quietest and `0` is the loudest** (`0` comes after
-  `9` on the dial), **neither is zero or full-scale**, and the steps are **even in dB**.
-- 10 levels, 11 equal intervals: digit `d` maps to step `k = d` (with `0` → `k = 10`) and
-  `gain_dB = min_dB + (k / 11) × (max_dB − min_dB)`.
+- **Changed (2026-09-28): 9 levels, digits `1` to `9`.** One digit sets the level: **`1` is the quietest and `9` the
+  loudest**, **neither is zero or full-scale**, and the steps are **even in dB**. The earlier tenth level on `0` is
+  dropped: `0` would really mean "ten", which takes too long to explain. Dialing `0` in these modes gets a
+  mode-specific remark from the operator (`phone_ui.md`, "General").
+- 9 levels, 10 equal intervals: digit `d` maps to step `k = d` and
+  `gain_dB = min_dB + (k / 10) × (max_dB − min_dB)`.
 - **Range: keep the existing `gain.h` limits** (stage 6, 2026-09-20: the volume steps work well on the earpiece with
   the 820 Ω pads; no narrowing needed for now):
 
-| | Range | Step | Level `1` | Level `0` |
+| | Range | Step | Level `1` | Level `9` |
 |---|---|---|---|---|
-| Earpiece | −43.5 to +4.5 dB | 4.36 dB | ≈ −39.1 dB | ≈ +0.1 dB |
-| Microphone | −39 to +9 dB | 4.36 dB | ≈ −34.6 dB | ≈ +4.6 dB |
+| Earpiece | −43.5 to +4.5 dB | 4.8 dB | −38.7 dB | −0.3 dB |
+| Microphone | −39 to +9 dB | 4.8 dB | −34.2 dB | +4.2 dB |
 
 - Expect the bottom steps to be too quiet to be useful (raise the floor after listening) and the
   microphone top step to risk clipping on top of the MAX9814's own gain/AGC (lower the ceiling if
-  so). Only the two range constants change.
-- After the level is set, the phone **speaks the number that was set** (`audio_clips.md`: a label
-  clip such as "Earpiece volume", then the digit clip). The digit is the one dialed, so "zero"
-  means loudest.
+  so). Only the two range constants change. The stage 9 microphone default of −12 dB now falls between levels 5
+  (−15.0 dB) and 6 (−10.2 dB); pick the default level, or shift the range so a level lands on −12 dB.
+- **On entering the mode** the phone says the label and how to use it ("Earpiece volume. Dial one for the quietest, up
+  to nine for the loudest."). **After a level is set** it is applied at once, and the phone speaks a confirmation that
+  is also a sample of the new level: the label, the digit and a short sample sentence (`phone_ui.md`, "3 and 4";
+  `audio_clips.md`). A true sample for the microphone is open (record and play back; `phone_ui.md`, open issue 21).
 - These values persist across power cycles.
 
 ### Tone era — Decided (mode 5)
@@ -466,13 +481,13 @@ Rules:
   tone used for a failed call (see "Behavior by era").
 - The choice persists across power cycles.
 
-### Equalizer profiles — Proposed (mode 7 microphone, mode 8 earpiece)
+### Equalizer profiles — bench only
 
 Each direction has ten profiles; the digit dialed selects one and `0` is flat (bypassed). A profile is up to three
 second-order filter sections (high-pass, low-pass, peaking, low or high shelf) and a pre-gain that gives back the headroom
 a boost uses. They are **starting points to judge by ear and by recordings**, not final values, and are built and tested in
-`hwtest` (`eqp`, `sweep`, `noise`, `rec`, `hwtest/main/eq.c`). The chosen numbers go into the firmware, and the two chosen
-digits persist like the volume digits.
+`hwtest` (`eqp`, `sweep`, `noise`, `rec`, `hwtest/main/eq.c`). **Changed (2026-09-28):** they are not dial modes (`7`,
+`8` and `9` are unassigned); the profile chosen on the bench for each direction is fixed in the firmware.
 
 **Where they act.** The microphone profile filters the codec's input before anything uses it (calls, recordings); the
 earpiece profile filters the audio just before the codec. The tone generators and clips go through the earpiece profile too.
@@ -514,8 +529,8 @@ between 2 and 3 kHz, a fall-off above about 4 kHz, and a fixed hiss that a high 
 | 9 | soft wideband | +3 dB below 300 Hz, −4 dB above 5 kHz |
 
 This reverses the earlier "no software filtering on the microphone path" for the case where the housing needs it; a passive
-high-pass (see "Microphone") can still do part of the job. The persistent settings gain two digits (below), and
-`audio_clips.md` gains two label clips.
+high-pass (see "Microphone") can still do part of the job. (The earlier plan to make the
+profiles dial modes 7 and 8, with two persistent digits and two label clips, was dropped on 2026-09-28.)
 
 ### Bluetooth pairing via the dial itself
 
@@ -573,15 +588,14 @@ Found while reading `gui_task.c` and `components/gui`; each needs a new home:
 
 ## Persistent settings — Proposed
 
-`ps.c` stores everything in the gCore EFM8's RAM over I2C, which this board does not have. It
-should be replaced with a small ESP-IDF NVS store (NVS is already initialised for Bluetooth bonds)
-holding just:
+`ps.c` stores everything in the gCore EFM8's RAM over I2C, which this board does not have. **Changed
+(2026-09-28):** the settings are stored on the **SD card**, next to the clips. Without a card the phone runs a
+tone-only mode with fixed defaults, in which essentially only placing a call works (`phone_ui.md`). The settings are:
 
 - earpiece volume digit
 - microphone volume digit
 - tone era
-- microphone equalizer digit (0 = off)
-- earpiece equalizer digit (0 = off)
+- dial clicks (full, faint or silent; how it is set is open in `phone_ui.md`)
 
 Pairing state is best taken from the Bluetooth bond list itself, with a single-bond rule, instead
 of a separate stored copy. That removes the case where the stored copy and the bond list disagree.
@@ -592,8 +606,8 @@ Brightness and country code are no longer needed.
 Tones are **generated** in firmware, with the sources and numbers in `doc/tones.md`. Only verified
 tones are included in the era profiles. Behaviors to implement, drawn from that document:
 
-- The dial's off-normal contact mutes the earpiece while dialing (no pulse clicks in the audio),
-  which is authentic.
+- While the dial is off-normal, the earpiece plays the dial pulses at a configurable setting: full, faint clicks, or
+  silent (muted, the authentic behavior of the caller's own set). See `phone_ui.md`.
 - Dialed pulses are ignored while a busy tone plays.
 - Ringback tone is generated locally when the cellphone reports the call is alerting (HFP
   `callsetup` = 3). **Open:** whether to mute the cellphone's own in-band ringback in the call
@@ -629,7 +643,8 @@ higher quality than would fit in flash. The full list to record, with status, is
 
 - **Format:** 16-bit mono WAV, **all clips in one large WAV (a "bank") plus an index of clip boundaries** (clip ID,
   start sample, length), with per-clip files as the fallback (`doc/audio_clips.md`). **Two banks, 8 kHz and 16 kHz, are
-  in the design**: active notifications such as "battery low" can play during a call, so the firmware picks the bank
+  in the design**: active notifications could play during a call (the only one listed, "battery low", is obsolete since
+  the phone has no battery, so the 8 kHz bank may not be needed), so the firmware picks the bank
   that matches the codec's current I2S rate (8 kHz for a CVSD call, 16 kHz for mSBC or when idle) and never re-clocks
   the codec mid-clip. Stage 6 found no audible quality difference between 16, 22.05 and 44.1 kHz on the earpiece, so
   nothing above 16 kHz is stored.

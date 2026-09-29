@@ -150,6 +150,13 @@ step-by-step apparatus. It gives **no tone frequencies**, but it documents behav
 - **Permanent signals** (a line left off-hook with nothing dialed) were a maintenance matter: the
   supervisory switch "is closed during the period that the selectors are routined for permanents."
   **[P]** No automatic timed treatment is described in this book.
+- **No tone between digits.** Dial tone comes from the first selector and stops when the first digit is dialed ("The
+  tone stops when the first dialed digit is recognized." **[S]** Wikipedia, Dial tone); the caller then hears silence
+  while dialing the rest. The exception is a **second dial tone** after an access code: in the US one "was generated if
+  the user dialled an area code ..., indicating that the remote exchange was ready to receive digits" **[S]** (same
+  article; no dates or office types given), and in parts of the UK a code such as 7 or 87 was followed by a second
+  dialling tone from a tandem exchange, which "was very unusual on the PSTN in the UK" **[S]** (Wikipedia, Trunk versus
+  toll telephony).
 
 ## 5. Rotary dial protocol
 
@@ -241,7 +248,10 @@ Notes:
 - **Levels and modulation depth are not documented for the period tones.** Set by ear and against
   recordings. The current firmware's reorder level (−13 dB) is well above the −24 dBm spec.
 - **Earpiece mute while dialing** (off-normal contact, sec. 4) is authentic and removes the need to
-  filter pulse clicks. **[I]**
+  filter pulse clicks. **[I]** The design makes it configurable (full pulses, faint clicks, or silent; `phone_ui.md`).
+  Some period sets only attenuated the clicks with a varistor across the receiver. **[S]**
+  (<https://en.wikipedia.org/wiki/Pulse_dialing>) An extension phone on the same line has no shunt for another set's
+  dial, so it heard the pulses in full. **[I]**
 - **Ignore dial pulses while busy tone plays** (sec. 4). **[I]**
 
 ## 9. Excluded: not verified
@@ -288,6 +298,7 @@ These came up in searches but are **not** in any era profile:
 - **[P]** Mahoney, *Principles of Automatic Telephony* (Automatic Electric Co., 1924), scan: <https://www.telephonecollectors.info/index.php/browse/bc-switching-library/automatic-electric/ae-switching-docs/9969-ae-automatic-telephony-1924-bc-ocr-r/file>
 - **[S]** Precise tone plan: <https://en.wikipedia.org/wiki/Precise_tone_plan>
 - **[S]** Dial tone: <https://en.wikipedia.org/wiki/Dial_tone>
+- **[S]** Trunk versus toll telephony: <https://en.wikipedia.org/wiki/Trunk_versus_toll_telephony>
 - **[S]** Busy signal: <https://en.wikipedia.org/wiki/Busy_signal>
 - **[S]** Ringing tone: <https://en.wikipedia.org/wiki/Ringing_tone>
 - **[S]** Reorder tone: <https://en.wikipedia.org/wiki/Reorder_tone>
